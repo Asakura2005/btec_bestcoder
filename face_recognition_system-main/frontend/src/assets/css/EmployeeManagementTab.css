@@ -1,0 +1,74 @@
+.employee-management-content {
+  padding: 30px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.employee-panel-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0;
+}
+
+/* Custom dialog titles */
+.primary-title-dialog {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: white;
+  padding: 24px !important;
+  font-weight: 700 !important;
+}
+
+.red-title-dialog {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  color: white;
+  padding: 24px !important;
+  font-weight: 700 !important;
+}
+
+/* Avatar styling */
+.v-avatar {
+  border: 1px solid #eee;
+}
+
+/* Adjust table styling */
+.v-data-table-server {
+  box-shadow: none !important;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Table headers styling */
+:deep(.v-data-table-server .v-data-table-header th) {
+  background-color: #f8fafc !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+  font-size: 0.875rem !important;
+}
+
+:deep(.v-data-table-server .v-data-table__td) {
+  font-size: 0.9rem !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .employee-management-content {
+    padding: 20px;
+  }
+
+  .employee-panel-title {
+    font-size: 20px;
+  }
+
+  .d-flex.align-center.justify-space-between.mb-4 {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 15px;
+  }
+
+  .v-btn {
+    width: 100%;
+  }
+}

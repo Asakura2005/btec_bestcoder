@@ -1,0 +1,77 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Database
+*.db
+*.sqlite3
+*.sqlite
+instance/
+migrations/versions/   # Chỉ cần nếu không muốn push migration history, thường giữ lại folder migrations (trừ /versions)
+*.log
+migrations/
+
+# Env/config
+.env
+.env.*
+!.env.example
+
+# Flask cache
+*.pid
+*.swp
+
+# Editor, IDE
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+*.seed
+docker-compose.override.yml
+
+# Node/React frontend
+frontend/node_modules/
+frontend/.env
+frontend/.env.*
+frontend/build/
+frontend/dist/
+
+# Build/coverage
+htmlcov/
+.coverage
+.tox/
+.pytest_cache/
+.cache/
+
+# Test output
+*.cover
+coverage.xml
+*.tmp
+
+# Backup
+*.bak
+*.old
+
+# Logs
+logs/
+*.log
+
+# Misc
+*.out
+*.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+backend/data
+/backend/data/

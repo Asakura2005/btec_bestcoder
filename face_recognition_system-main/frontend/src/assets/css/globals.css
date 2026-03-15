@@ -1,0 +1,198 @@
+/* 
+   ==========================================================================
+   ANTIGRAVITY PREMIUM DESIGN SYSTEM - HIGH CONTRAST & MODERN
+   ==========================================================================
+*/
+
+:root {
+    /* Core contrast colors */
+    --v-theme-surface: 255, 255, 255 !important;
+    --v-theme-on-surface: 15, 23, 42 !important;
+    /* Slate 900 */
+    --v-theme-primary: 79, 70, 229 !important;
+    /* Indigo 600 */
+
+    /* Force high emphasis for visibility */
+    --v-high-emphasis-opacity: 1 !important;
+    --v-medium-emphasis-opacity: 0.9 !important;
+    --v-disabled-opacity: 0.6 !important;
+}
+
+/* 1. GLOBAL TEXT - PURE BLACK FOR MAX READABILITY */
+body,
+#app {
+    color: #0f172a !important;
+    /* Slate 900 */
+    background-color: #f8fafc !important;
+}
+
+/* 2. PREMIUM INPUT FIELDS */
+.v-field {
+    background-color: #ffffff !important;
+    border-radius: 12px !important;
+    border: 2px solid #cbd5e1 !important;
+    /* Slate 300 base border */
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    overflow: visible !important;
+    /* Allow labels to breathe */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.v-field--focused {
+    border-color: #6366f1 !important;
+    /* Indigo 500 */
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1), 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Hide native Vuetify outline math since we use our own border */
+.v-field__outline {
+    display: none !important;
+}
+
+/* 3. SMART LABELS - NO OVERLAPPING */
+.v-label.v-field-label {
+    color: #475569 !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Floating label when field is active/has content */
+.v-field--active .v-label.v-field-label,
+.v-field--focused .v-label.v-field-label {
+    color: #4f46e5 !important;
+    font-weight: 800 !important;
+    font-size: 12px !important;
+    background: #ffffff !important;
+    padding: 0 8px !important;
+    transform: translateY(-26px) scale(1) !important;
+    opacity: 1 !important;
+    z-index: 10 !important;
+    border-radius: 4px;
+}
+
+/* Special fix for padding and overlap in compact mode */
+.v-field__input {
+    padding-top: 10px !important;
+    padding-bottom: 4px !important;
+    min-height: 44px !important;
+    /* Fixed height for consistency */
+    align-items: center !important;
+}
+
+/* Ensure labels don't cover date/time values */
+.v-field--active.v-field--dirty .v-label.v-field-label,
+.v-field--focused .v-label.v-field-label {
+    transform: translateY(-28px) scale(0.9) !important;
+}
+
+/* 4. INPUT TEXT - DEEP BLACK */
+.v-field__input input,
+.v-select__selection,
+.v-field__input {
+    color: #000000 !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
+    -webkit-text-fill-color: #000000 !important;
+}
+
+/* Date/Time pickers */
+input[type="date"],
+input[type="time"] {
+    font-family: inherit;
+    font-weight: 700 !important;
+    color: #000000 !important;
+}
+
+/* 5. MENUS & DROPDOWNS - PREMIUM FLOATING LISTS */
+.v-overlay-container .v-overlay {
+    z-index: 2500 !important;
+}
+
+.v-list {
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+    padding: 8px !important;
+}
+
+.v-list-item {
+    border-radius: 8px !important;
+    margin-bottom: 2px !important;
+    transition: all 0.2s ease !important;
+}
+
+.v-list-item:hover {
+    background-color: #f1f5f9 !important;
+}
+
+.v-list-item--active {
+    background-color: #eef2ff !important;
+    color: #4f46e5 !important;
+}
+
+.v-list-item-title {
+    font-weight: 600 !important;
+    color: #1e293b !important;
+}
+
+/* 6. BUTTONS - PREMIUM GLASS/GRADIENT */
+.v-btn {
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.01em !important;
+    text-transform: none !important;
+    /* Don't force uppercase */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.v-btn--variant-elevated {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* 7. SCROLLBARS - MODERN SLIM */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* 8. TITLES & HEADINGS */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.panel-title,
+.settings-title {
+    color: #0f172a !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.025em !important;
+}
+
+/* 9. LOGIN PAGE SPECIFIC FIXES */
+.login-card {
+    border: none !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+}
+
+.login-title {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 900 !important;
+}
