@@ -1,6 +1,6 @@
 # app/models/settings.py
 
-from app import db
+from app.db import db
 from datetime import time
 
 class Settings(db.Model):

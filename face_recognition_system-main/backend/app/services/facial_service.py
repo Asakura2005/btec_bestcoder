@@ -21,8 +21,63 @@ if not os.path.exists(MODEL_PATH):
 
 _shape_predictor = dlib.shape_predictor(MODEL_PATH)
 _face_detector = dlib.get_frontal_face_detector()
+
+# Primary analyzer with standard det-size
 _face_analyzer = insightface.app.FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
-_face_analyzer.prepare(ctx_id=0)
+_face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+
+# Fallback analyzer with smaller det-size for low-res images
+_face_analyzer_small = insightface.app.FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+_face_analyzer_small.prepare(ctx_id=0, det_size=(320, 320))
+
+def _preprocess_image(img):
+    """Preprocess image to improve face detection reliability."""
+    h, w = img.shape[:2]
+    
+    # If image is very small, resize up
+    if h < 400 or w < 400:
+        scale = max(400 / h, 400 / w)
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        print(f"[FaceDetect] Resized small image from ({w},{h}) to ({img.shape[1]},{img.shape[0]})")
+    
+    # If image is too large, resize down to avoid slowness
+    max_dim = 1280
+    if h > max_dim or w > max_dim:
+        scale = min(max_dim / h, max_dim / w)
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        print(f"[FaceDetect] Resized large image to ({img.shape[1]},{img.shape[0]})")
+    
+    return img
+
+def _detect_faces_robust(img):
+    """Try multiple detection strategies to find faces."""
+    # Strategy 1: Primary analyzer (det-size 640x640)
+    faces = _face_analyzer.get(img)
+    if faces and len(faces) >= 1:
+        print(f"[FaceDetect] Primary detector found {len(faces)} face(s)")
+        return faces
+    
+    # Strategy 2: Smaller det-size for low-res images
+    faces = _face_analyzer_small.get(img)
+    if faces and len(faces) >= 1:
+        print(f"[FaceDetect] Small detector found {len(faces)} face(s)")
+        return faces
+    
+    # Strategy 3: Enhance contrast and retry
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    l = clahe.apply(l)
+    enhanced = cv2.merge([l, a, b])
+    enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+    
+    faces = _face_analyzer.get(enhanced)
+    if faces and len(faces) >= 1:
+        print(f"[FaceDetect] Enhanced image detector found {len(faces)} face(s)")
+        return faces
+    
+    print(f"[FaceDetect] No faces detected after all strategies. Image shape: {img.shape}, mean brightness: {cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).mean():.1f}")
+    return []
 
 def _extract_landmarks(image_bgr: np.ndarray):
     """Return landmarks (68,2) or None if not exactly one face."""
@@ -144,15 +199,22 @@ class FacialRecognitionService:
         if img is None:
             return False, "Invalid image", None, None
 
+        # Preprocess image
+        img = _preprocess_image(img)
+
         # Check lighting
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        if gray.mean() < 50:
-            return False, "Insufficient lighting", None, None
+        mean_brightness = gray.mean()
+        print(f"[FaceDetect] Image brightness: {mean_brightness:.1f}, shape: {img.shape}")
+        if mean_brightness < 30:
+            return False, "Insufficient lighting - please move to a brighter area", None, None
 
-        # Detect face and generate embedding
-        faces = _face_analyzer.get(img)
-        if not faces or len(faces) != 1:
-            return False, "Please ensure exactly one face is visible", None, None
+        # Detect face using robust multi-strategy detection
+        faces = _detect_faces_robust(img)
+        if not faces:
+            return False, "No face detected. Please look straight at the camera and ensure good lighting.", None, None
+        if len(faces) > 1:
+            return False, f"Multiple faces detected ({len(faces)}). Please ensure only one face is visible.", None, None
 
         face = faces[0]
         embedding = face.embedding.astype(np.float32).tobytes()
@@ -278,9 +340,12 @@ class FacialRecognitionService:
     @staticmethod
     def recognize_face_with_multiple_encodings(img):
         """Face recognition with multiple encodings"""
-        faces = _face_analyzer.get(img)
-        if not faces or len(faces) != 1:
-            return False, "Image must contain exactly one face", None
+        img = _preprocess_image(img)
+        faces = _detect_faces_robust(img)
+        if not faces:
+            return False, "No face detected. Please look straight at the camera.", None
+        if len(faces) > 1:
+            return False, f"Multiple faces detected ({len(faces)}). Please ensure only one face is visible.", None
 
         # Normalize query embedding
         query_embedding = faces[0].embedding.astype(np.float32)

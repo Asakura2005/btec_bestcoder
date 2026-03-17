@@ -53,7 +53,7 @@ class Attendance(db.Model):
         if not attendance_type:
             raise ValueError("Attendance type cannot be empty")
         
-        valid_types = ['normal', 'late', 'half_day', 'recovered'] 
+        valid_types = ['normal', 'late', 'half_day', 'recovered', 'incomplete'] 
         if attendance_type not in valid_types:
             raise ValueError(f"Invalid attendance type: {attendance_type}. Must be one of {valid_types}")
         return True

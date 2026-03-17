@@ -63,7 +63,15 @@ class Session(db.Model):
     @classmethod
     def invalidate_token_hash(cls, jwt_token: str) -> None:
         """Vô hiệu hoá (đặt is_valid=False) tất cả phiên trùng token."""
-        hashed = cls.hash_token(jwt_token)
+        try:
+            payload = jwt.decode(jwt_token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
+            jti = payload.get('jti')
+            if not jti:
+                return
+            hashed = hash_jti(jti)
+        except Exception:
+            # Fallback: try hashing the full token (legacy)
+            hashed = cls.hash_token(jwt_token)
         # CẬP NHẬT: Tìm kiếm session không phân biệt admin_id hay employee_id, chỉ dựa vào jwt_token_hash
         sess = cls.query.filter_by(jwt_token_hash=hashed, is_valid=True).first()
         if sess:

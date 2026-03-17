@@ -1,5 +1,5 @@
 # Import các thư viện cần thiết
-from app import db  # SQLAlchemy database instance - FIX: đồng nhất với Employee model
+from app.db import db  # SQLAlchemy database instance
 from datetime import datetime  # Xử lý thời gian
 import uuid  # Tạo ID duy nhất cho training data
 import pytz  # Xử lý múi giờ

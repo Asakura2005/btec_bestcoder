@@ -6,7 +6,7 @@ from app.models.employee import Employee
 from app.models.face_training_data import FaceTrainingData
 from app.services.facial_service import FacialRecognitionService
 from app.utils.helpers import get_upload_path, serialize_employee_full, format_datetime_vn
-from app import db
+from app.db import db
 from sqlalchemy.exc import IntegrityError
 from PIL import Image
 from io import BytesIO
@@ -37,11 +37,23 @@ def add_employee_logic(data, image_files):
     if Employee.query.filter_by(employee_id=employee_id).first():
         return None, {"error": "Employee ID already exists"}, 400
 
+    # Convert empty strings to None for optional unique fields
+    email = data.get('email', '').strip() or None
+    phone = data.get('phone', '').strip() or None
+    position = data.get('position', '').strip() or None
+    username = data.get('username', '').strip() or None
+
     try:
-        Employee.validate_email(data.get('email'))
-        Employee.validate_phone(data.get('phone'))
+        Employee.validate_email(email)
+        Employee.validate_phone(phone)
     except ValueError as ve:
         return None, {"error": str(ve)}, 400
+
+    # Check for duplicate email if provided
+    if email:
+        existing_email = Employee.query.filter_by(email=email).first()
+        if existing_email:
+            return None, {"error": f"Email '{email}' is already registered to another employee"}, 400
 
     save_dir = get_upload_path()
     os.makedirs(save_dir, exist_ok=True)
@@ -62,39 +74,39 @@ def add_employee_logic(data, image_files):
             image.save(save_path)
             pose_types.append(metadata['pose_type'])
     except Exception as e:
+        print(f"[AddEmployee] Image processing error: {e}")
+        import traceback
+        traceback.print_exc()
         return None, {"error": f"Failed to process images: {str(e)}"}, 500
 
     new_employee = Employee(
         employee_id=employee_id,
         full_name=data['full_name'],
         department=data['department'],
-        position=data.get('position'),
-        phone=data.get('phone'),
-        email=data.get('email'),
+        position=position,
+        phone=phone,
+        email=email,
         face_training_completed=len(pose_types) >= 3,
         total_poses_trained=len(pose_types),
-        username=data.get('username') # Admin có thể cung cấp username riêng
+        username=username
     )
     
     # Logic đặt mật khẩu mặc định và cờ must_change_password
     initial_password = data.get('initial_password')
     if initial_password:
-        # Nếu Admin cung cấp mật khẩu ban đầu, sử dụng nó
         new_employee.set_password(initial_password)
-        new_employee.must_change_password = False # Không cần đổi ngay nếu Admin đã đặt
-        if not new_employee.username: # Nếu Admin không đặt username, dùng employee_id
+        new_employee.must_change_password = False
+        if not new_employee.username:
             new_employee.username = employee_id
     else:
-        # Nếu Admin không cung cấp, đặt mật khẩu mặc định là employee_id và buộc đổi
-        new_employee.set_password(employee_id) # Mật khẩu mặc định là employee_id
-        new_employee.must_change_password = True # Buộc đổi mật khẩu lần đầu
-        if not new_employee.username: # Nếu Admin không đặt username, dùng employee_id
+        new_employee.set_password(employee_id)
+        new_employee.must_change_password = True
+        if not new_employee.username:
             new_employee.username = employee_id
-
 
     try:
         db.session.add(new_employee)
-        db.session.commit() # Commit để có new_employee.id cho FaceTrainingData
+        db.session.commit()
 
         for encoding, pose_type, quality_score in face_encodings:
             training_data = FaceTrainingData.create_training_data(
@@ -107,16 +119,28 @@ def add_employee_logic(data, image_files):
         if len(pose_types) >= 3:
             new_employee.complete_face_training()
         db.session.commit()
-    except IntegrityError:
+    except IntegrityError as e:
         db.session.rollback()
-        return None, {"error": "Database error – possibly duplicate or constraint violation"}, 500
+        print(f"[AddEmployee] IntegrityError: {e}")
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        if 'email' in error_msg.lower():
+            return None, {"error": "This email is already registered to another employee"}, 400
+        elif 'username' in error_msg.lower():
+            return None, {"error": "This username is already taken"}, 400
+        elif 'employee_id' in error_msg.lower():
+            return None, {"error": "Employee ID already exists"}, 400
+        return None, {"error": f"Database constraint error: {error_msg}"}, 400
     except Exception as e:
         db.session.rollback()
+        print(f"[AddEmployee] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
         return None, {"error": f"An unexpected error occurred: {str(e)}"}, 500
 
     return {
         "message": "Employee added successfully",
         "employee": serialize_employee_full(new_employee),
+        "employee_id": employee_id,
         "poses_trained": pose_types
     }, None, 201
 

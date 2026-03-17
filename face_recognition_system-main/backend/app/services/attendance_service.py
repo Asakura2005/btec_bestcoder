@@ -8,7 +8,7 @@ from PIL import Image
 from io import BytesIO
 import base64
 import os
-from app import db
+from app.db import db
 from app.services.facial_service import FacialRecognitionService
 from app.models.attendance import Attendance
 from app.models.employee import Employee

@@ -5,7 +5,7 @@ from app.models.face_training_data import FaceTrainingData
 from app.models.employee import Employee
 from app.models.admin import Admin
 from app.utils.decorators import admin_required
-from app import db
+from app.db import db
 from datetime import datetime, timedelta
 import os
 import shutil
@@ -99,7 +99,11 @@ def reset_system():
 
         db.session.query(Attendance).delete()
         db.session.query(FaceTrainingData).delete()
-        db.session.query(Employee).update({Employee.face_training_status: 'pending'})
+        db.session.query(Employee).update({
+            Employee.face_training_completed: False,
+            Employee.face_training_date: None,
+            Employee.total_poses_trained: 0
+        })
 
         db.session.commit()
         

@@ -105,7 +105,8 @@ class Employee(db.Model):
     # Lấy bản ghi chấm công mới nhất
     def get_latest_attendance(self):
         """Trả về bản ghi chấm công mới nhất của nhân viên"""
-        return self.attendance_records.order_by(Attendance.timestamp.desc()).first()
+        return Attendance.query.filter_by(employee_id=self.employee_id)\
+            .order_by(Attendance.timestamp.desc()).first()
     
     # Kiểm tra nhân viên đã check-in hôm nay chưa
     def is_checked_in_today(self):

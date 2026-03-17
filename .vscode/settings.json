@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/face_recognition_system-main/backend/venv/Scripts/python.exe",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/face_recognition_system-main/backend"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}/face_recognition_system-main/backend"
+    ]
+}
