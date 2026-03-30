@@ -89,6 +89,13 @@ def recognize_face_logic(image_file, base64_image, location, device_info, sessio
     employee_id = employee.employee_id
     full_name = employee.full_name
     department = employee.department
+    
+    # Extract AI recognition metadata
+    recognition_meta = getattr(employee, '_recognition_meta', {})
+    detected_emotion = recognition_meta.get('emotion', 'neutral')
+    detected_masked = recognition_meta.get('is_masked', False)
+    match_distance = recognition_meta.get('match_distance', None)
+    confidence_score = recognition_meta.get('confidence_score', None)
 
     # Lấy thời gian hiện tại
     current_time = get_vn_datetime()
@@ -167,6 +174,9 @@ def recognize_face_logic(image_file, base64_image, location, device_info, sessio
                 timestamp=current_time,
                 attendance_type=attendance_type
             )
+            # Save AI metadata
+            attendance.emotion = detected_emotion
+            attendance.is_masked = detected_masked
             db.session.add(attendance)
             db.session.commit()
             
@@ -181,6 +191,9 @@ def recognize_face_logic(image_file, base64_image, location, device_info, sessio
                 "status": "check-in",
                 "attendance_type": attendance_type,
                 "timestamp": format_datetime_vn(current_time),
+                "emotion": detected_emotion,
+                "is_masked": detected_masked,
+                "confidence_score": confidence_score,
                 "liveness_passed": True,
                 "session_id": session_id
             }, None, 200

@@ -58,7 +58,11 @@
         <!-- Content Area -->
         <div class="content-area">
           <transition name="fade" mode="out-in">
-            <div v-if="currentTab === 'employee-management'" class="content-panel">
+            <div v-if="currentTab === 'dashboard'" class="content-panel">
+              <DashboardTab />
+            </div>
+
+            <div v-else-if="currentTab === 'employee-management'" class="content-panel">
               <EmployeeManagementTab />
             </div>
 
@@ -73,6 +77,10 @@
             <div v-else-if="currentTab === 'settings'" class="content-panel">
               <SettingTab/>
             </div>
+
+            <div v-else-if="currentTab === 'payroll'" class="content-panel">
+              <PayrollTab/>
+            </div>
           </transition>
         </div>
       </div>
@@ -85,26 +93,35 @@ import '@/assets/css/Login.css';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
+import DashboardTab from '@/components/DashboardTab.vue';
 import EmployeeManagementTab from '@/components/EmployeeManagementTab.vue';
 import AttendanceHistoryTab from '@/components/AttendanceHistoryTab.vue';
 import AttendanceRecoveryRequestTab from '@/components/AttendanceRecoveryRequestTab.vue';
 import SettingTab from '@/components/SettingTab.vue';
+import PayrollTab from '@/components/PayrollTab.vue';
 
 export default {
   name: 'AdminDashboard',
   components: {
+    DashboardTab,
     EmployeeManagementTab,
     AttendanceHistoryTab,
     SettingTab,
-    AttendanceRecoveryRequestTab
+    AttendanceRecoveryRequestTab,
+    PayrollTab
   },
   setup() {
-    const currentTab = ref('employee-management');
+    const currentTab = ref('dashboard');
     const router = useRouter();
     const authStore = useAuthStore();
     const pendingRequestsCount = ref(0);
 
     const tabs = [
+      {
+        value: 'dashboard',
+        label: 'Dashboard',
+        icon: 'mdi-view-dashboard'
+      },
       {
         value: 'employee-management',
         label: 'Employee Management',
@@ -124,6 +141,11 @@ export default {
         value: 'settings',
         label: 'Settings',
         icon: 'mdi-tools'
+      },
+      {
+        value: 'payroll',
+        label: 'Payroll',
+        icon: 'mdi-cash-multiple'
       }
     ];
 

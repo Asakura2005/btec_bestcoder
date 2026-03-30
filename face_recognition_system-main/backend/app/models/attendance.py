@@ -18,6 +18,10 @@ class Attendance(db.Model):
     attendance_type = db.Column(db.String(20), nullable=False, default='normal')  # Loại chấm công: normal, late, half_day, recovered
     location = db.Column(db.String(100))  # Vị trí chấm công (tùy chọn)
     device_info = db.Column(db.String(255))  # Thông tin thiết bị (tùy chọn)
+    emotion = db.Column(db.String(20), nullable=True)  # Cảm xúc: happy, neutral, sad, angry, surprise
+    is_masked = db.Column(db.Boolean, default=False)  # Có đeo khẩu trang không
+    spoofing_score = db.Column(db.Float, nullable=True)  # Điểm anti-spoofing (0=real, 1=fake)
+    confidence_score = db.Column(db.Float, nullable=True) # Confidence Score
     created_at = db.Column(db.DateTime, 
                           default=lambda: datetime.now(pytz.timezone("Asia/Ho_Chi_Minh")).replace(tzinfo=None), 
                           nullable=False)  # Thời gian tạo bản ghi
@@ -168,6 +172,10 @@ class Attendance(db.Model):
             'attendance_type': self.attendance_type,
             'location': self.location,
             'device_info': self.device_info,
+            'emotion': self.emotion,
+            'is_masked': self.is_masked,
+            'spoofing_score': self.spoofing_score,
+            'confidence_score': self.confidence_score,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
     

@@ -59,8 +59,13 @@
         <!-- Content Area -->
         <div class="content-area">
           <transition name="fade" mode="out-in">
+            <!-- Dashboard -->
+            <div v-if="currentTab === 'dashboard'" class="content-panel">
+              <EmployeeDashboardTab />
+            </div>
+
             <!-- Attendance Summary -->
-            <div v-if="currentTab === 'summary'" class="content-panel">
+            <div v-else-if="currentTab === 'summary'" class="content-panel">
               <div class="panel-content">
                 <div v-if="attendanceReport" class="summary-section">
                   <div class="summary-header">
@@ -544,16 +549,22 @@ import { useAuthStore } from '../stores/auth';
 import * as api from '@/services/api'; 
 import { useRouter } from 'vue-router';
 import '@/assets/css/Employees.css';
+import EmployeeDashboardTab from '@/components/EmployeeDashboardTab.vue';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const companySettings = ref(null);
 
 // Current tab state
-const currentTab = ref('summary');
+const currentTab = ref('dashboard');
 
 // Tab definitions
 const tabs = [
+  {
+    value: 'dashboard',
+    label: 'Dashboard',
+    icon: 'mdi-view-dashboard'
+  },
   {
     value: 'summary',
     label: 'Attendance Summary',

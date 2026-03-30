@@ -53,6 +53,32 @@
                 <div class="bottom-left"></div>
                 <div class="bottom-right"></div>
               </div>
+
+              <!-- Face Quality Overlay -->
+              <div v-if="faceQuality" class="quality-overlay">
+                <div class="quality-indicators">
+                  <div class="qi" :class="'qi-' + faceQuality.brightness.status">
+                    <span class="qi-icon">💡</span>
+                    <span>{{ faceQuality.brightness.message }}</span>
+                  </div>
+                  <div class="qi" :class="'qi-' + faceQuality.sharpness.status">
+                    <span class="qi-icon">🔍</span>
+                    <span>{{ faceQuality.sharpness.message }}</span>
+                  </div>
+                  <div class="qi" :class="'qi-' + faceQuality.face_size.status">
+                    <span class="qi-icon">📏</span>
+                    <span>{{ faceQuality.face_size.message }}</span>
+                  </div>
+                  <div class="qi" :class="'qi-' + faceQuality.face_angle.status">
+                    <span class="qi-icon">📐</span>
+                    <span>{{ faceQuality.face_angle.message }}</span>
+                  </div>
+                </div>
+                <div class="quality-bar">
+                  <div class="quality-fill" :style="{ width: faceQuality.overall_quality + '%', background: getQualityColor(faceQuality.overall_quality) }"></div>
+                </div>
+                <span class="quality-score">Quality: {{ faceQuality.overall_quality }}%</span>
+              </div>
             </div>
             
             <div class="camera-controls">
@@ -103,6 +129,13 @@
             </div>
             <h2>Check-{{ employee.status === 'check-in' ? 'in' : 'out' }} Successful!</h2>
             <p>Welcome back to the office</p>
+            <!-- Confidence Score Badge -->
+            <div v-if="employee.confidence_score" class="confidence-badge">
+              <div class="confidence-ring" :style="{ '--score': employee.confidence_score }">
+                <span class="confidence-value">{{ employee.confidence_score }}%</span>
+              </div>
+              <span class="confidence-label">Match Confidence</span>
+            </div>
           </div>
 
           <div class="employee-card">
@@ -127,6 +160,16 @@
                 <Calendar />
                 <p>Status</p>
                 <p>{{ employee.status }}</p>
+              </div>
+              <div v-if="employee.emotion" class="detail-box">
+                <span class="emotion-icon">{{ getEmotionEmoji(employee.emotion) }}</span>
+                <p>Emotion</p>
+                <p class="emotion-label">{{ employee.emotion }}</p>
+              </div>
+              <div v-if="employee.is_masked" class="detail-box mask-badge">
+                <span class="mask-icon">😷</span>
+                <p>Mask</p>
+                <p>Detected</p>
               </div>
             </div>
           </div>
@@ -237,6 +280,7 @@
 import '@/assets/css/Attendance.css';
 import { Camera, User, Clock, Calendar, History, CheckCircle, AlertCircle, RefreshCw } from 'lucide-vue-next';
 import { recognizeFace, getAttendanceHistory } from '../services/api';
+import api from '../services/api/index';
 import { v4 as uuidv4 } from 'uuid';
 
 export default {
@@ -265,6 +309,8 @@ export default {
       isCameraActive: false,
       sessionId: null,
       statusMessage: "Scanning for your face, please look directly at the camera.",
+      faceQuality: null,
+      qualityCheckInterval: null,
     };
   },
   watch: {
@@ -399,6 +445,8 @@ formatHistoryDate(dateString) {
       this.sessionId = uuidv4();
       if (this.isCameraActive) {
         this.recognitionInterval = setInterval(this.sendFrameForRecognition, 3000);
+        // Start face quality check (less frequent)
+        this.qualityCheckInterval = setInterval(this.checkFaceQuality, 2000);
       }
     },
 
@@ -407,15 +455,25 @@ formatHistoryDate(dateString) {
         clearInterval(this.recognitionInterval);
         this.recognitionInterval = null;
       }
+      if (this.qualityCheckInterval) {
+        clearInterval(this.qualityCheckInterval);
+        this.qualityCheckInterval = null;
+      }
       if (this.stream) {
         this.stream.getTracks().forEach(track => track.stop());
         this.stream = null;
       }
       this.isCameraActive = false;
+      this.faceQuality = null;
       if (this.$refs.videoRef) {
         this.$refs.videoRef.srcObject = null;
       }
       this.sessionId = null;
+      this.faceQuality = null;
+      if (this.qualityCheckInterval) {
+        clearInterval(this.qualityCheckInterval);
+        this.qualityCheckInterval = null;
+      }
       this.statusMessage = "Webcam turned off. Ready to start new recognition.";
     },
 
@@ -480,7 +538,10 @@ formatHistoryDate(dateString) {
               full_name: response.employee.full_name,
               department: response.employee.department,
               timestamp: response.timestamp,
-              status: response.status
+              status: response.status,
+              emotion: response.emotion || null,
+              is_masked: response.is_masked || false,
+              confidence_score: response.confidence_score || null
             };
             
             this.attendanceRecord = {
@@ -539,7 +600,39 @@ formatHistoryDate(dateString) {
       if (this.isCameraActive) {
         // Tăng interval lên 4 giây để tránh timeout
         this.recognitionInterval = setInterval(this.sendFrameForRecognition, 4000);
+        // Start face quality check
+        if (!this.qualityCheckInterval) {
+          this.qualityCheckInterval = setInterval(this.checkFaceQuality, 2000);
+        }
       }
+    },
+
+    async checkFaceQuality() {
+      if (!this.$refs.videoRef || !this.$refs.canvasRef || this.currentStep !== 'camera') return;
+      
+      try {
+        const canvas = this.$refs.canvasRef;
+        const video = this.$refs.videoRef;
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0);
+        
+        const base64Image = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+        const res = await api.post('/api/face-quality', { base64_image: base64Image });
+        
+        if (res.data?.success) {
+          this.faceQuality = res.data.data;
+        }
+      } catch (e) {
+        // Silently ignore quality check errors
+      }
+    },
+
+    getQualityColor(score) {
+      if (score >= 70) return '#10b981';
+      if (score >= 50) return '#f59e0b';
+      return '#ef4444';
     },
 
     async viewHistory() {
@@ -648,6 +741,17 @@ formatHistoryDate(dateString) {
         case 'Absent': return 'badge badge-absent';
         default: return 'badge badge-default';
       }
+    },
+
+    getEmotionEmoji(emotion) {
+      const emojiMap = {
+        'happy': '😊',
+        'neutral': '😐',
+        'sad': '😢',
+        'angry': '😠',
+        'surprise': '😲'
+      };
+      return emojiMap[emotion] || '😐';
     }
   }
 };

@@ -20,3 +20,9 @@ export * from './api/settings'
 
 // Export tất cả recovery APIs
 export * from './api/recovery'
+
+// Export tất cả dashboard APIs
+export * from './api/dashboard'
+
+// Export tất cả payroll APIs
+export * from './api/payroll'

@@ -7,7 +7,11 @@ from app.services.attendance_service import (
     get_today_attendance_logic,
     capture_face_training_logic
 )
+from app.services.facial_service import FacialRecognitionService
 from app.utils.decorators import admin_required, employee_required
+import base64
+import numpy as np
+import cv2
 
 # Khởi tạo Blueprint cho các route chấm công
 attendance_bp = Blueprint('attendance_bp', __name__)
@@ -197,3 +201,33 @@ def capture_face_training():
             'success': False,
             'message': f'Server error: {str(e)}'
         }), 500
+
+
+@attendance_bp.route('/api/face-quality', methods=['POST'])
+def check_face_quality():
+    """Real-time face quality analysis for camera overlay"""
+    try:
+        data = request.get_json()
+        base64_image = data.get('base64_image') if data else None
+        
+        if not base64_image:
+            return jsonify({'success': False, 'message': 'No image provided'}), 400
+        
+        # Decode image
+        if base64_image.startswith('data:'):
+            base64_image = base64_image.split(',', 1)[1]
+        
+        raw_bytes = base64.b64decode(base64_image)
+        nparr = np.frombuffer(raw_bytes, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            return jsonify({'success': False, 'message': 'Cannot decode image'}), 400
+        
+        # Analyze quality
+        quality = FacialRecognitionService.analyze_face_quality(image)
+        
+        return jsonify({'success': True, 'data': quality}), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
