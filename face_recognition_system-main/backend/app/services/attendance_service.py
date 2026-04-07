@@ -128,7 +128,7 @@ def recognize_face_logic(image_file, base64_image, location, device_info, sessio
                 "session_id": session_id
             }, 400
             
-        if checkout_count >= settings.max_checkouts_per_day and not checkout_record:
+        if checkout_count >= settings.max_checkouts_per_day and checkin_record:
             return None, {
                 "success": False,
                 "message": f"Maximum check-outs per day ({settings.max_checkouts_per_day}) exceeded",
@@ -249,28 +249,6 @@ def recognize_face_logic(image_file, base64_image, location, device_info, sessio
                 "attendance_type": "incomplete",
                 "timestamp": format_datetime_vn(current_time),
                 "warning": "Missing check-in record",
-                "liveness_passed": True,
-                "session_id": session_id
-            }, None, 200
-
-        # Case 4: Có check-in, quên check-out (sau giờ làm việc)
-        elif checkin_record and not checkout_record and current_hour >= settings.end_work:
-            # Cập nhật record check-in hiện có thành incomplete
-            checkin_record.attendance_type = "incomplete"
-            db.session.commit()
-            
-            return {
-                "success": True,
-                "message": "Attendance recorded successfully",
-                "employee": {
-                    "employee_id": employee_id,
-                    "full_name": full_name,
-                    "department": department
-                },
-                "status": "check-in",
-                "attendance_type": "incomplete",
-                "timestamp": format_datetime_vn(checkin_record.timestamp),
-                "warning": "Missing check-out record",
                 "liveness_passed": True,
                 "session_id": session_id
             }, None, 200

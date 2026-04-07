@@ -10,7 +10,7 @@ from app.db import db # THÊM IMPORT NÀY
 from app.models.admin import Admin
 from app.models.employee import Employee # THÊM IMPORT NÀY
 from app.models.session import Session # THÊM IMPORT NÀY
-from app.utils.security import hash_password # THÊM IMPORT NÀY (để hash jti)
+from app.utils.security import decode_jwt_token  # Available if needed for token operations
 import pytz
 
 # Hằng số múi giờ Việt Nam

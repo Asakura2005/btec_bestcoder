@@ -149,7 +149,7 @@ def set_employee_password(employee_id: str, new_password: str, username: Optiona
     """
     employee = Employee.query.filter_by(employee_id=employee_id.upper()).first()
     if not employee:
-        return False, "Employe not found."
+        return False, "Employee not found."
     
     if not new_password or len(new_password) < Config.MIN_PASSWORD_LENGTH:
         return False, f"Password must have at least {Config.MIN_PASSWORD_LENGTH} characters."
@@ -229,7 +229,7 @@ def forgot_password(email: str, user_type: str) -> Tuple[bool, Optional[str]]:
         if not user_obj:
             return True, None
             
-        # FIXED: Sử dụng UTC time nhất quán
+        # Sử dụng Asia/Ho_Chi_Minh timezone nhất quán với toàn bộ hệ thống
         now_utc = datetime.now(pytz.timezone("Asia/Ho_Chi_Minh"))
         
         # Tạo JWT reset token (expires trong 30 phút)

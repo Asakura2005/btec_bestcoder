@@ -1,0 +1,508 @@
+PHÂN TÍCH CÔNG NGHỆ DỰ ÁN: HỆ THỐNG CHẤM CÔNG NHẬN DIỆN KHUÔN MẶT
+===========================================================================
+
+Dự án này là một hệ thống full-stack web app, bao gồm backend API viết bằng
+Python/Flask, frontend Single Page Application viết bằng Vue.js, và một pipeline
+AI xử lý ảnh khuôn mặt dựa trên InsightFace và dlib. Toàn bộ được đóng gói và
+triển khai bằng Docker Compose.
+
+
+===========================================================================
+1. KIẾN TRÚC TỔNG QUAN
+===========================================================================
+
+Hệ thống được chia làm 3 layer chính:
+
+  - Backend   : Python + Flask, chạy trên port 5000, phục vụ REST API
+  - Frontend  : Vue.js build ra static, Nginx phục vụ trên port 80
+  - Frontend Dev : Vite dev server trên port 5173 (chỉ dùng lúc phát triển)
+
+Ba service này được quản lý bằng docker-compose.yml, giao tiếp qua một internal
+Docker network tên "face-recognition-network".
+
+
+===========================================================================
+2. BACKEND: PYTHON / FLASK
+===========================================================================
+
+Ngôn ngữ : Python 3.x
+Framework : Flask 3.1.1
+
+Flask được cấu hình theo kiểu Blueprint, tức là mỗi nhóm chức năng được tách
+thành một module riêng biệt (không viết hết vào một file). Cụ thể có 8 blueprint:
+
+  - attendance_bp          : xử lý check-in / check-out
+  - employee_bp            : quản lý nhân viên
+  - auth_bp                : đăng nhập, đăng xuất, xác thực (/api/auth)
+  - report_bp              : báo cáo chấm công
+  - settings_bp            : cấu hình công ty (giờ làm, giờ nghỉ trưa, ...)
+  - attendance_recovery_bp : xử lý yêu cầu phục hồi ngày công
+  - dashboard_bp           : dữ liệu cho trang tổng quan
+  - payroll_bp             : tính lương
+
+Các thư viện Flask quan trọng:
+  - Flask-CORS 4.0.0          : cho phép frontend (domain khác) gọi API
+  - Flask-JWT-Extended 4.6.0  : middleware kiểm tra JWT token trên các route
+  - Flask-SQLAlchemy 3.0.3    : kết nối ORM vào Flask app
+  - Flask-Migrate 4.0.4       : chạy migration schema (dùng Alembic phía sau)
+
+Sản xuất dùng Gunicorn 21.2.0 làm WSGI server thay cho Flask built-in server.
+Biến môi trường được quản lý qua file .env, đọc bằng python-dotenv.
+
+
+===========================================================================
+3. DATABASE: SQLITE + SQLALCHEMY
+===========================================================================
+
+Database chính : SQLite (file attendance.db lưu trong thư mục instance/)
+ORM            : SQLAlchemy 2.0.41
+Migration      : Alembic 1.16.1 (quản lý lịch sử thay đổi schema)
+
+Hệ thống có sẵn driver psycopg2-binary để có thể chuyển sang PostgreSQL ở
+môi trường production nếu cần.
+
+Các bảng chính trong database:
+
+  Bảng: employees
+    - Lưu thông tin nhân viên: họ tên, phòng ban, chức vụ, email, trạng thái
+    - Có cột face_training_completed: đánh dấu đã huấn luyện khuôn mặt chưa
+    - Có cột must_change_password: bắt nhân viên mới đổi mật khẩu lần đầu
+
+  Bảng: admins
+    - Tài khoản quản trị
+    - Có cơ chế khóa tài khoản sau nhiều lần đăng nhập sai
+
+  Bảng: attendance
+    - Mỗi bản ghi là một lần check-in hoặc check-out
+    - Lưu: employee_id, timestamp, status (check-in/check-out), attendance_type
+    - attendance_type có thể là: normal, late, half_day, recovered, incomplete
+    - Lưu thêm: emotion (cảm xúc), is_masked (có đeo khẩu trang), spoofing_score,
+      confidence_score
+
+  Bảng: face_training_data
+    - Lưu vector embedding khuôn mặt (512 float32 bytes)
+    - Mỗi nhân viên có thể có nhiều bản ghi, mỗi bản ghi là một pose khác nhau
+    - Pose bao gồm: front, left, right, up, down
+    - Lưu thêm: image_quality_score để bỏ qua ảnh chất lượng kém khi nhận diện
+
+  Bảng: sessions
+    - Quản lý phiên đăng nhập
+    - Lưu hash của JWT token (dùng SHA-256) thay vì lưu token gốc
+    - Khi logout: đánh dấu is_valid = False (không chỉ xóa token phía client)
+
+  Bảng: audit_logs
+    - Ghi lại lịch sử đăng nhập (thành công / thất bại)
+
+  Bảng: payroll_records
+    - Kết quả tính lương theo tháng
+
+  Bảng: settings
+    - Cấu hình công ty: giờ bắt đầu, giờ kết thúc, giờ nghỉ trưa, ...
+
+  Bảng: attendance_recovery_request
+    - Yêu cầu xin phục hồi ngày công (admin duyệt hoặc từ chối)
+
+
+===========================================================================
+4. AI / NHẬN DIỆN KHUÔN MẶT
+===========================================================================
+
+Đây là phần phức tạp nhất của dự án. Pipeline nhận diện gồm nhiều bước:
+
+Bước 1: Tiền xử lý ảnh
+  - Nếu ảnh quá nhỏ (< 400px): phóng to lên bằng cv2.resize với INTER_CUBIC
+  - Nếu ảnh quá lớn (> 1280px): thu nhỏ lại với INTER_AREA
+  - Kiểm tra độ sáng: nếu trung bình pixel < 30 -> báo lỗi thiếu ánh sáng
+
+Bước 2: Phát hiện khuôn mặt (Multi-strategy)
+  - Thử 1: InsightFace với det_size=(640, 640) --- ưu tiên cao nhất
+  - Thử 2: InsightFace với det_size=(320, 320) --- cho ảnh độ phân giải thấp
+  - Thử 3: Tăng cường độ tương phản bằng CLAHE -> thử lại lần nữa
+  Nếu tất cả đều thất bại -> trả về lỗi "No face detected"
+
+Bước 3: Trích xuất embedding
+  - Sử dụng model "buffalo_l" của InsightFace (chạy qua ONNX Runtime)
+  - Mỗi khuôn mặt -> vector 512 chiều (float32)
+  - Vector được chuẩn hóa (chia cho norm) trước khi lưu và so sánh
+
+Bước 4: So sánh với database
+  - Lấy hết nhân viên có face_training_completed = True và status = True
+  - Với mỗi nhân viên: lấy tất cả bản ghi face_training_data (nhiều pose)
+  - Bỏ qua bản ghi có image_quality_score < 35
+  - Tính cosine distance = 1 - dot(query, stored)
+  - Chọn nhân viên có distance nhỏ nhất
+
+Bước 5: Kết luận
+  - Ngưỡng (threshold) mặc định: 0.35
+  - Nếu đeo khẩu trang: nới lỏng lên 0.40
+  - Confidence score = (1 - distance / threshold) * 100
+  - Nếu confidence > 90% và không đeo khẩu trang: tự động cập nhật encoding
+    (weighted average: 85% cũ + 15% mới)
+
+Thư viện AI sử dụng:
+  - insightface 0.7.3             : model nhận diện khuôn mặt chính
+  - dlib 20.0.0                   : phát hiện 68 landmark (mắt, mũi, miệng, lông mày)
+  - opencv-python-headless 4.10.0 : xử lý ảnh (không cần GUI)
+  - numpy >= 1.26.0               : tính toán ma trận, cosine similarity
+  - onnxruntime 1.22.1            : chạy model InsightFace định dạng ONNX
+  - scikit-image 0.25.2           : xử lý ảnh nâng cao
+  - scikit-learn 1.7.1            : các thuật toán ML hỗ trợ
+
+
+===========================================================================
+5. CHỐNG GIẢ MẠO (ANTI-SPOOFING) - 4 LỚP BẢO VỆ
+===========================================================================
+
+Hệ thống có 4 lớp kiểm tra để chống việc camera quay vào màn hình điện thoại
+hoặc in ảnh ra để gian lận chấm công.
+
+Lớp 1: LBP Texture Analysis
+  - LBP (Local Binary Pattern): quét texture vùng da ở vùng trung tâm ảnh
+  - Da thật có texture phong phú (entropy cao), màn hình có texture đồng đều
+  - Tính entropy của histogram LBP
+  - Kết hợp với phân tích tần số cao (FFT) để đo Moiré pattern
+  - Nếu texture quá đồng đều hoặc có nhiều tần số cao -> nghi ngờ giả mạo
+
+Lớp 2: 3D Depth Estimation
+  - Ước tính chiều sâu (depth) của khuôn mặt
+  - Mặt thật có cấu trúc 3D, ảnh 2D thì không
+  -> Phát hiện ảnh phẳng (in ra hoặc hiện trên màn hình)
+
+Lớp 3: Moiré Pattern Detection
+  - Dùng FFT (biến đổi Fourier) trên vùng mặt khuôn mặt
+  - Màn hình điện thoại / máy tính có lưới pixel tạo ra Moiré pattern
+  - Tính tỷ lệ năng lượng tần số cao / tổng năng lượng
+  - Nếu hf_ratio > 0.6 -> có khả năng cao là màn hình
+
+Lớp 4: Screen Reflection / Glare Detection
+  - Phát hiện ánh phản chiếu / loé sáng đặc trưng của màn hình điện tử
+  - Màn hình phản chiếu ánh sáng theo cách khác mặt người thật
+
+Tất cả 4 lớp phải vượt qua mới được chuyển sang bước nhận diện.
+
+
+===========================================================================
+6. KIỂM TRA NGƯỜI THẬT (LIVENESS DETECTION)
+===========================================================================
+
+Sau khi vượt qua anti-spoofing, hệ thống còn yêu cầu người dùng thực hiện
+một hành động để chứng minh là người thật đang đứng trước camera.
+
+3 hành động được phát hiện:
+
+  Chớp mắt (Blink):
+    - Dùng EAR (Eye Aspect Ratio) = (A + B) / (2 * C)
+    - A, B: khoảng cách dọc của mắt (trên-dưới)
+    - C: khoảng cách ngang của mắt (trái-phải)
+    - Nếu EAR < 0.25 -> phát hiện chớp mắt
+
+  Cười (Smile):
+    - Tính tỷ lệ chiều rộng / chiều cao miệng
+    - Dùng landmark điểm 48-68 (vùng miệng) từ dlib
+    - Nếu width/height ratio > 3.0 -> phát hiện nụ cười
+
+  Cử động đầu (Head Movement):
+    - Theo dõi sự thay đổi góc yaw và roll qua nhiều frame
+    - Yaw: lật mặt sang trái/phải
+    - Roll: nghiêng mặt
+    - Nếu thay đổi > 6 độ -> phát hiện cử động
+
+Quản lý session:
+  - Mỗi phiên check-in có session_id riêng
+  - Session hết hạn sau 5 giây
+  - Lưu tối đa 30 frame mỗi session
+  - Chỉ cần phát hiện 1 trong 3 hành động là qua
+
+
+===========================================================================
+7. PHÂN TÍCH KHUÔN MẶT NÂNG CAO
+===========================================================================
+
+Ngoài nhận diện, hệ thống còn phân tích thêm các yếu tố:
+
+Phát hiện cảm xúc (Emotion Detection):
+  - Dùng 68 landmark của dlib
+  - Phân tích: độ rộng / cao miệng, EAR (Eye Aspect Ratio), chiều cao lông mày
+  - Phân loại: happy, sad, angry, neutral, surprise
+  - Kết quả lưu vào cột "emotion" của bản ghi Attendance
+
+Phát hiện khẩu trang (Mask Detection):
+  - Trích xuất vùng khuôn mặt phía dưới (mũi đến cằm)
+  - Chuyển sang không gian màu HSV
+  - Tính tỷ lệ pixel có màu da / tổng pixel
+  - Kết hợp với độ đồng đều màu: mask thường có màu đồng đều hơn da thật
+  - Nếu tỷ lệ màu da < 15% và color_std < 40 -> xác định có đeo khẩu trang
+  - Nếu phát hiện khẩu trang: nới lỏng ngưỡng nhận diện (0.35 -> 0.40)
+
+Đánh giá chất lượng ảnh (Face Quality Analysis):
+  - Phân tích real-time để hiển thị hướng dẫn trên camera overlay
+  - Kiểm tra: độ sáng (brightness), độ sắc nét (Laplacian variance),
+    kích thước khuôn mặt trong ảnh, góc nghiêng
+  - Trả về status: good / medium / low cho từng tiêu chí
+  - Nếu tất cả tiêu chí tốt: ready_to_capture = True
+
+Tự động cập nhật encoding (Auto-Update):
+  - Khi confidence > 90% và ảnh chất lượng tốt (> 60 điểm)
+  - Lấy encoding hiện tại của pose "front"
+  - Tính trung bình có trọng số: updated = 0.85 * cũ + 0.15 * mới
+  - Chuẩn hóa lại vector
+  - Lưu vào database
+  -> Hệ thống dần dần thích nghi với thay đổi ngoại hình theo thời gian
+
+
+===========================================================================
+8. BẢO MẬT HỆ THỐNG (SECURITY)
+===========================================================================
+
+Mật khẩu:
+  - Dùng bcrypt 4.0.1 để hash mật khẩu trước khi lưu
+  - Salt ngẫu nhiên được tạo mỗi lần set password
+  - Kiểm tra bằng bcrypt.checkpw (không bao giờ lưu mật khẩu gốc)
+
+Xác thực (Authentication):
+  - Dùng JWT (JSON Web Token) chuẩn HS256
+  - Token hết hạn sau 120 phút (có thể cấu hình)
+  - Mỗi token có JTI (JWT ID) duy nhất tạo bằng uuid4()
+  - JTI được hash bằng SHA-256 trước khi lưu vào bảng sessions
+  - Khi logout: đánh dấu session là is_valid = False (không chỉ xóa token)
+
+Bảo vệ đăng nhập:
+  - Sau 5 lần sai liên tiếp: khóa tài khoản 30 phút
+  - AuditLog ghi lại mọi lần đăng nhập (cả thành công và thất bại)
+  - Session bị vô hiệu hóa khi đăng nhập từ thiết bị mới (single session)
+
+Quên mật khẩu:
+  - Gửi email qua Resend API (dịch vụ gửi email qua REST API)
+  - Email chứa link reset với JWT token hết hạn sau 30 phút
+  - Token chỉ dùng được một lần
+
+Phân quyền:
+  - 2 role: admin và employee
+  - Mỗi role có payload JWT khác nhau
+  - Decorator @require_admin, @require_employee trên các route
+
+
+===========================================================================
+9. FRONTEND: VUE.JS 3
+===========================================================================
+
+Framework  : Vue.js 3.5.17 (Composition API)
+Build tool : Vite (dùng rolldown-vite, nhanh hơn Webpack)
+UI Library : Vuetify 3.8.9 (Material Design component)
+State      : Pinia 3.0.3 (thay thế Vuex, đơn giản hơn)
+Routing    : Vue Router 4.5.1 (SPA routing)
+HTTP       : Axios 1.10.0 (gọi REST API backend)
+Biểu đồ   : ApexCharts 5.10.4 + vue3-apexcharts
+Icons      : MDI (Material Design Icons) + Lucide Vue Next
+Thời gian  : dayjs 1.11.13
+
+Các trang chính:
+  - Login.vue              : Trang đăng nhập (Admin và Employee)
+  - HomeView.vue           : Dashboard tổng quan + biểu đồ
+  - Attendance.vue         : Quản lý chấm công, xem lịch sử
+  - Employees.vue          : Quản lý nhân viên, huấn luyện khuôn mặt
+  - ChangePasswordPage.vue : Đổi mật khẩu
+  - ResetPassword.vue      : Đặt lại mật khẩu qua link email
+
+Theme: Vuetify được cấu hình với màu primary là #6366f1 (indigo), dùng light theme.
+Style: SASS được dùng để viết CSS tùy chỉnh.
+
+State Management (Pinia):
+  - auth.js store: lưu token JWT, thông tin user sau khi đăng nhập
+  - jwt-decode: giải mã token phía client để lấy role/info không cần gọi API
+
+Frontend được đóng gói thành static files, Nginx phục vụ trên port 80.
+Nginx cũng được cấu hình proxy_pass để chuyển /api/* sang backend :5000.
+
+
+===========================================================================
+10. XUẤT DỮ LIỆU (REPORT EXPORT)
+===========================================================================
+
+Thư viện sử dụng:
+  - openpyxl 3.1.5  : tạo file Excel .xlsx với style (màu sắc, font, border)
+  - XlsxWriter 3.1.9: writer Excel bổ sung
+  - pandas >= 2.2.3 : xử lý dữ liệu dạng bảng
+  - reportlab 4.0.7 : tạo file PDF
+
+Các loại báo cáo có thể xuất:
+
+  Báo cáo chấm công cá nhân (Excel):
+    - Tổng hợp: số ngày làm, số ngày nghỉ, số lần trễ, giờ tăng ca, giờ thiếu
+    - Chi tiết từng ngày: check-in/out, loại ngày, ghi chú
+
+  Báo cáo theo phòng ban (Excel):
+    - Liệt kê tất cả nhân viên trong phòng ban
+    - Mỗi người một hàng, tóm tắt các chỉ số
+
+  Bảng lương tháng (Excel):
+    - Tính: lương cơ bản, lương ngày công, tiền tăng ca, trừ vắng, trừ trễ
+    - Format: số tiền hiển thị có dấu phân cách (format #,##0)
+    - Dòng tổng cộng cuối bảng
+
+Cách tính lương:
+  - daily_rate      = base_salary / 26 ngày
+  - work_salary     = daily_rate * số ngày thực tế làm
+  - ot_pay          = daily_rate / 8 * ot_multiplier * số giờ OT
+  - late_deduction  = late_deduction_amount * số lần trễ
+  - net_salary      = work_salary + ot_pay - late_deductions - absent_deductions
+
+
+===========================================================================
+11. XỬ LÝ THỜI GIAN
+===========================================================================
+
+Hệ thống luôn dùng múi giờ Việt Nam (Asia/Ho_Chi_Minh, UTC+7).
+Thư viện pytz được sử dụng để chuyển đổi timezone.
+
+Mọi thời gian lưu vào database đều là "naive datetime" (không có timezone info
+đính kèm) nhưng đã được chuyển sang VN time trước đó.
+
+Các mốc thời gian quan trọng trong cấu hình Settings:
+  - start_work  : giờ bắt đầu làm (ví dụ 08:00)
+  - end_work    : giờ kết thúc làm (ví dụ 17:30)
+  - lunch_start : bắt đầu nghỉ trưa (ví dụ 12:00)
+  - lunch_end   : hết nghỉ trưa (ví dụ 13:00)
+
+Khi tính giờ làm thực tế: tổng thời gian - giờ nghỉ trưa (nếu làm qua cả hai đầu)
+Khi tính OT: thời gian làm thực tế - 8 giờ chuẩn
+
+
+===========================================================================
+12. TRIỂN KHAI: DOCKER
+===========================================================================
+
+File: docker-compose.yml
+
+3 service được định nghĩa:
+
+  backend:
+    - Build từ ./backend/Dockerfile
+    - Expose port 5000
+    - Mount volume để code và instance (database) tồn tại ngoài container
+    - Biến môi trường: FLASK_ENV, DATABASE_URL, ...
+    - restart: unless-stopped
+
+  frontend:
+    - Build từ ./frontend/Dockerfile (Nginx)
+    - Expose port 80
+    - Depends on backend (đảm bảo backend khởi động trước)
+    - restart: unless-stopped
+
+  frontend-dev:
+    - Build target "builder" (chỉ lấy stage cài npm)
+    - Chạy lệnh: npm run dev -- --host
+    - Mount volume source code để hot-reload
+    - Expose port 5173
+    - Biến VITE_API_URL=http://localhost:5000
+
+Tất cả service kết nối vào Docker network "face-recognition-network" (bridge).
+
+Testing:
+  - pytest 7.4.2 + pytest-flask 1.3.0
+  - Thư mục tests/ trong backend
+
+
+===========================================================================
+13. LUỒNG NGHIỆP VỤ: CHECK-IN MỘT LẦN (ĐẦY ĐỦ 20 BƯỚC)
+===========================================================================
+
+Để hình dung rõ hơn, đây là một luồng đầy đủ khi nhân viên bấm check-in:
+
+   1. Nhân viên mở trình duyệt -> đăng nhập -> vào trang check-in
+   2. Frontend gửi API POST /api/attendance/check-in với frame ảnh (base64)
+   3. Backend nhận ảnh -> giải mã base64 -> chuyển về numpy array (OpenCV)
+   4. Kiểm tra độ sáng: nếu < 30 -> trả lỗi thiếu ánh sáng
+   5. Chạy Anti-Spoofing lớp 1 (LBP + FFT) -> nếu fail -> từ chối
+   6. Chạy Anti-Spoofing lớp 2 (3D Depth) -> nếu fail -> từ chối
+   7. Chạy Anti-Spoofing lớp 3 (Moiré) -> nếu fail -> từ chối
+   8. Chạy Anti-Spoofing lớp 4 (Reflection) -> nếu fail -> từ chối
+   9. Kiểm tra Liveness (blink/smile/head) qua session_id
+      -> nếu chưa đủ -> yêu cầu tiếp tục thực hiện hành động
+  10. InsightFace phát hiện khuôn mặt trong ảnh
+  11. Trích xuất vector embedding 512 chiều
+  12. Chuẩn hóa vector (chia cho norm)
+  13. Truy vấn DB: lấy tất cả nhân viên active có face_training_completed = True
+  14. Với mỗi nhân viên: tính cosine distance với các embedding đã lưu
+  15. Chọn nhân viên có distance nhỏ nhất, kiểm tra < threshold (0.35 hoặc 0.40)
+  16. Nếu khớp: xác định điều kiện check-in (đúng giờ, trễ, nửa ngày, ...)
+  17. Tạo bản ghi Attendance (check-in) lưu vào database
+  18. Nếu confidence > 90%: kích hoạt auto-update encoding
+  19. Trả về JSON: employee info + attendance_type + emotion + confidence + ...
+  20. Frontend hiển thị kết quả cho nhân viên
+
+
+===========================================================================
+14. DANH SÁCH THƯ VIỆN BACKEND (ĐẦY ĐỦ)
+===========================================================================
+
+  alembic==1.16.1
+  bcrypt==4.0.1
+  boto3==1.38.27              (AWS SDK - có thể dùng để lưu ảnh lên S3)
+  botocore==1.38.27
+  dlib==20.0.0
+  face-recognition==1.3.0
+  face_recognition_models==0.3.0
+  Flask==3.1.1
+  Flask-Cors==4.0.0
+  Flask-JWT-Extended==4.6.0
+  Flask-Migrate==4.0.4
+  Flask-SQLAlchemy==3.0.3
+  gunicorn==21.2.0
+  imageio==2.37.0
+  insightface==0.7.3
+  matplotlib==3.10.3
+  numpy>=1.26.0,<2.0.0
+  onnx==1.18.0
+  onnxruntime==1.22.1
+  opencv-python-headless==4.10.0.84
+  openpyxl==3.1.5
+  pandas>=2.2.3
+  pillow==11.3.0
+  psycopg2-binary==2.9.10
+  pydantic==2.11.7
+  PyJWT==2.10.1
+  pytest==7.4.2
+  pytest-flask==1.3.0
+  python-dotenv==1.0.0
+  pytz==2025.2
+  reportlab==4.0.7
+  requests==2.32.4
+  scikit-image==0.25.2
+  scikit-learn==1.7.1
+  scipy==1.16.0
+  SQLAlchemy==2.0.41
+  XlsxWriter==3.1.9
+
+
+===========================================================================
+15. DANH SÁCH THƯ VIỆN FRONTEND (ĐẦY ĐỦ)
+===========================================================================
+
+  dependencies (dùng lúc chạy):
+    @mdi/font: ^7.4.47
+    apexcharts: ^5.10.4
+    axios: ^1.10.0
+    dayjs: ^1.11.13
+    deepmerge: ^4.3.1
+    jwt-decode: ^4.0.0
+    lucide-vue-next: ^0.525.0
+    pinia: ^3.0.3
+    sass: ^1.89.2
+    sass-loader: ^16.0.5
+    uuid: ^11.1.0
+    vue: ^3.5.17
+    vue-router: ^4.5.1
+    vue3-apexcharts: ^1.11.1
+    vuetify: ^3.8.9
+
+  devDependencies (chỉ dùng lúc build / phát triển):
+    @vitejs/plugin-vue: ^6.0.0
+    autoprefixer: ^10.4.21
+    postcss: ^8.5.6
+    prettier: 3.5.3
+    tailwindcss: ^4.1.11
+    vite: npm:rolldown-vite@latest
+    vite-plugin-vue-devtools: ^7.7.7
+
+===========================================================================

@@ -54,8 +54,8 @@ export const useAuthStore = defineStore('auth', () => {
         await logoutAdmin();
       }
       console.log('Backend logout successful or not needed (no token).');
-    } catch (error) {
-      console.error('Error during backend logout API call, but proceeding with frontend logout:', error);
+    } catch (logoutError) {
+      console.error('Error during backend logout API call, but proceeding with frontend logout:', logoutError);
     } finally {
       // Xóa token và user khỏi Pinia store
       token.value = null;

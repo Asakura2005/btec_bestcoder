@@ -148,12 +148,18 @@ class Settings(db.Model):
         if 'timeSettings' in data:
             ts = data['timeSettings']
             self.enable_time_management = ts.get('enabled', self.enable_time_management)
-            self.start_work = parse_time(ts.get('workStartTime'), 'workStartTime')
-            self.end_work = parse_time(ts.get('workEndTime'), 'workEndTime')
-            self.checkin_start_window = parse_time(ts.get('checkinStart'), 'checkinStart')
-            self.checkin_end_window = parse_time(ts.get('checkinEnd'), 'checkinEnd')
-            self.lunch_start = parse_time(ts.get('lunchStart'), 'lunchStart')
-            self.lunch_end = parse_time(ts.get('lunchEnd'), 'lunchEnd')
+            if 'workStartTime' in ts:
+                self.start_work = parse_time(ts['workStartTime'], 'workStartTime') or self.start_work
+            if 'workEndTime' in ts:
+                self.end_work = parse_time(ts['workEndTime'], 'workEndTime') or self.end_work
+            if 'checkinStart' in ts:
+                self.checkin_start_window = parse_time(ts['checkinStart'], 'checkinStart') or self.checkin_start_window
+            if 'checkinEnd' in ts:
+                self.checkin_end_window = parse_time(ts['checkinEnd'], 'checkinEnd') or self.checkin_end_window
+            if 'lunchStart' in ts:
+                self.lunch_start = parse_time(ts['lunchStart'], 'lunchStart') or self.lunch_start
+            if 'lunchEnd' in ts:
+                self.lunch_end = parse_time(ts['lunchEnd'], 'lunchEnd') or self.lunch_end
             self.minimum_work_hours = ts.get('minWorkHours', self.minimum_work_hours)
             if self.minimum_work_hours is not None and self.minimum_work_hours < 1:
                 raise ValueError("Minimum work hours must be at least 1")

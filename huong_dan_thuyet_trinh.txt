@@ -1,0 +1,387 @@
+HƯỚNG DẪN LÀM SLIDE VÀ THUYẾT TRÌNH
+DỰ ÁN: HỆ THỐNG CHẤM CÔNG NHẬN DIỆN KHUÔN MẶT
+===========================================================================
+
+File này tóm tắt những điểm CỐT LÕI cần trình bày trong slide, những câu hỏi
+hội đồng hay hỏi, và cách giải thích đơn giản để người nghe hiểu được.
+
+
+===========================================================================
+PHẦN 1: BỐ CỤC SLIDE ĐỀ XUẤT (10-12 SLIDE)
+===========================================================================
+
+Slide 1 - Trang bìa
+  - Tên đề tài
+  - Tên nhóm / MSSV
+  - GVHD
+
+Slide 2 - Đặt vấn đề (WHY)
+  - Chấm công truyền thống (thẻ từ, vân tay) có vấn đề gì?
+    + Có thể nhờ người chấm hộ (buddy punching)
+    + Vân tay dễ giả mạo bằng khuôn silicon
+    + Không ghi nhận trạng thái thực tế (đeo khẩu trang, cảm xúc)
+  - Giải pháp: nhận diện khuôn mặt + chống giả mạo nhiều lớp
+
+Slide 3 - Tổng quan hệ thống
+  - Sơ đồ kiến trúc 3 tầng: Frontend / Backend / Database
+  - Nêu ngắn gọn luồng hoạt động: nhân viên -> camera -> AI -> ghi công
+
+Slide 4 - Công nghệ sử dụng (TECH STACK)
+  - Bảng chia 3 cột: Frontend / Backend / AI & ML
+  - Không cần giải thích chi tiết ở slide này, chỉ liệt kê tên
+
+Slide 5 - Pipeline nhận diện khuôn mặt (TRỌNG TÂM)
+  - Vẽ sơ đồ luồng: Ảnh -> Tiền xử lý -> Phát hiện mặt -> Embedding -> So sánh
+  - Giải thích InsightFace tạo ra vector 512 chiều
+  - Giải thích cosine similarity
+
+Slide 6 - Chống giả mạo - Anti-Spoofing (ĐIỂM ĐỘC ĐÁO)
+  - Liệt kê 4 lớp bảo vệ
+  - Nhấn mạnh: hệ thống từ chối cả ảnh in và ảnh trên màn hình điện thoại
+  - Đây là điểm khác biệt lớn nhất so với hệ thống thông thường
+
+Slide 7 - Liveness Detection
+  - 3 hành động: chớp mắt, cười, cử động đầu
+  - Giải thích tại sao cần liveness (một ảnh tĩnh không qua được)
+
+Slide 8 - Tính năng nghiệp vụ
+  - Quản lý nhân viên
+  - Chấm công tự động (phân loại: đúng giờ, trễ, nửa ngày, vắng)
+  - Báo cáo xuất Excel
+  - Tính lương tự động
+  - Phục hồi ngày công (xin phép)
+
+Slide 9 - Bảo mật hệ thống
+  - JWT + bcrypt + session management
+  - Khóa tài khoản sau 5 lần sai
+  - Audit log
+
+Slide 10 - Demo / Kết quả thực nghiệm
+  - Ảnh chụp màn hình giao diện thực tế
+  - Số liệu: độ chính xác nhận diện, thời gian xử lý mỗi frame
+  - Kết quả test anti-spoofing (ví dụ: thử 20 lần bằng ảnh -> từ chối 20/20)
+
+Slide 11 - Hạn chế và hướng phát triển
+  - Hạn chế: cần ánh sáng tốt, chưa có GPU nên tốc độ còn chậm
+  - Hướng phát triển: thêm GPU support, cloud deployment, mobile app
+
+Slide 12 - Kết luận
+  - Tóm tắt đóng góp chính của đề tài
+  - Cảm ơn
+
+
+===========================================================================
+PHẦN 2: NHỮNG ĐIỂM CỐT LÕI PHẢI HIỂU THẬT SÂU
+===========================================================================
+
+Đây là những điểm hội đồng sẽ hỏi sâu nhất. Cần nắm vững để trả lời.
+
+--------------------------------------------------------------------------
+2.1 - InsightFace và vector embedding - Phải giải thích được
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "Hệ thống so sánh khuôn mặt bằng cách nào?"
+
+Cách giải thích đơn giản:
+  - InsightFace là một mô hình deep learning đã được huấn luyện trên hàng
+    triệu khuôn mặt. Khi đưa ảnh vào, nó tạo ra một vector số gồm 512 phần tử.
+  - Vector này gọi là "embedding" - là cách mã hóa đặc trưng khuôn mặt thành số.
+  - Hai ảnh của cùng một người sẽ tạo ra 2 vector gần nhau trong không gian số.
+  - Hai ảnh của người khác nhau sẽ có 2 vector cách xa nhau.
+  - Hệ thống đo khoảng cách bằng cosine distance (= 1 - cosine similarity).
+  - Nếu khoảng cách < 0.35 thì xác định là cùng một người.
+
+Công thức cosine similarity:
+  cos_sim = dot(vector_A, vector_B) / (|vector_A| * |vector_B|)
+  distance = 1 - cos_sim
+  -> distance gần 0: rất giống nhau
+  -> distance gần 1: rất khác nhau
+
+Tại sao dùng cosine thay vì Euclidean distance?
+  - Cosine không bị ảnh hưởng bởi độ lớn của vector, chỉ quan tâm đến hướng.
+  - Sau khi chuẩn hóa vector (L2 norm = 1), cosine distance = Euclidean distance.
+  - Phù hợp hơn khi so sánh đặc trưng khuôn mặt.
+
+--------------------------------------------------------------------------
+2.2 - Tại sao huấn luyện nhiều pose (5 hướng)
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "Sao phải chụp 5 ảnh, 1 ảnh không đủ sao?"
+
+Cách giải thích:
+  - Khi check-in thực tế, người dùng không luôn nhìn thẳng vào camera.
+  - Nếu chỉ lưu embedding của ảnh thẳng mặt, khi người nghiêng đầu sẽ không nhận ra.
+  - 5 pose: front (thẳng), left (nghiêng trái), right (nghiêng phải),
+    up (ngẩng lên), down (cúi xuống).
+  - Khi nhận diện: so sánh với tất cả pose đã lưu, lấy kết quả gần nhất.
+  - Điều này tăng đáng kể độ chính xác trong điều kiện thực tế.
+
+--------------------------------------------------------------------------
+2.3 - Anti-Spoofing - Phải giải thích được kỹ thuật
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "Làm sao biết là ảnh thật hay ảnh giả?"
+
+Cách giải thích LBP Texture:
+  - Da người thật có texture (vân da) rất phức tạp và ngẫu nhiên.
+  - Ảnh in ra hoặc hiện trên màn hình có texture đồng đều hơn.
+  - LBP là thuật toán đo sự biến đổi texture xung quanh mỗi pixel.
+  - Từ LBP tính entropy: entropy cao = texture phức tạp = da thật.
+
+Cách giải thích Moiré Detection (FFT):
+  - Màn hình điện thoại/máy tính gồm lưới pixel (RGB subpixels).
+  - Khi camera chụp màn hình, lưới pixel tạo ra pattern can thiệp gọi là Moiré.
+  - Dùng FFT (biến đổi Fourier) để chuyển ảnh sang miền tần số.
+  - Màn hình có nhiều năng lượng ở tần số cao -> phát hiện được.
+
+--------------------------------------------------------------------------
+2.4 - Liveness Detection - Tại sao cần thêm bước này
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "Anti-spoofing rồi, sao còn cần liveness?"
+
+Cách giải thích:
+  - Anti-spoofing chủ yếu phân tích texture và tần số của ảnh tĩnh.
+  - Một số trường hợp ảnh in chất lượng cao có thể vượt qua anti-spoofing.
+  - Liveness buộc người dùng thực hiện hành động mà ảnh tĩnh không làm được:
+    chớp mắt, cười, cử động đầu.
+  - Hai lớp bảo vệ bổ trợ cho nhau, tăng độ tin cậy tổng thể.
+
+--------------------------------------------------------------------------
+2.5 - Tại sao dùng SQLite thay vì MySQL/PostgreSQL
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "Dùng SQLite cho production có ổn không?"
+
+Cách giải thích:
+  - SQLite phù hợp cho dự án nhỏ và vừa, dễ setup, không cần server riêng.
+  - Đề tài này là nghiên cứu/proof-of-concept nên SQLite là hợp lý.
+  - Code đã chuẩn bị sẵn psycopg2-binary để chuyển sang PostgreSQL nếu cần.
+  - SQLAlchemy ORM giúp việc chuyển đổi database gần như không cần sửa code.
+
+--------------------------------------------------------------------------
+2.6 - JWT và quản lý session
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "JWT là gì? Sao không dùng session truyền thống?"
+
+Cách giải thích:
+  - JWT (JSON Web Token) là chuỗi ký tự chứa thông tin người dùng, được ký số.
+  - Server không cần lưu session, chỉ cần verify chữ ký -> stateless.
+  - Phù hợp cho hệ thống có frontend và backend tách biệt (khác domain/port).
+  - Hệ thống này có thêm bước: lưu hash của JTI (token ID) vào DB để có thể
+    revoke token khi logout -> kết hợp ưu điểm của cả hai cách.
+
+--------------------------------------------------------------------------
+2.7 - Auto-update encoding - Tại sao cần tính năng này
+--------------------------------------------------------------------------
+
+Câu hỏi thường gặp: "Tự động cập nhật embedding có nguy hiểm không?"
+
+Cách giải thích:
+  - Khuôn mặt người thay đổi theo thời gian (tóc, mắt kính, tăng/giảm cân).
+  - Nếu không cập nhật, độ chính xác giảm dần sau vài tháng.
+  - Hệ thống chỉ cập nhật khi confidence > 90% (rất chắc chắn đúng người).
+  - Dùng weighted average 85% cũ + 15% mới -> thay đổi từ từ, không đột ngột.
+  - Nếu có sự cố nhận sai với confidence cao (rất hiếm), ảnh hưởng chỉ là 15%.
+
+
+===========================================================================
+PHẦN 3: ĐIỂM ĐỘC ĐÁO CẦN NHẤN MẠNH KHI THUYẾT TRÌNH
+===========================================================================
+
+Đây là những điều giúp đề tài nổi bật so với các đề tài cùng chủ đề:
+
+1. Chống giả mạo 4 lớp
+   - Hầu hết hệ thống chấm công chỉ nhận diện khuôn mặt, không chống giả mạo.
+   - Đây là điểm khác biệt lớn nhất và cũng là đóng góp kỹ thuật chính.
+   - Nhấn mạnh: 4 lớp độc lập, phải vượt qua TẤT CẢ mới được chấm công.
+
+2. Liveness Detection bằng hành động sinh học
+   - Phát hiện chớp mắt qua EAR (Eye Aspect Ratio) - kỹ thuật chuẩn trong ngành.
+   - Phát hiện cử động đầu qua thay đổi góc yaw/roll - giống nhận diện 3D.
+   - Tích hợp session-based: theo dõi liên tục nhiều frame thay vì chỉ 1 ảnh.
+
+3. Phân tích khuôn mặt nâng cao ngoài nhận diện
+   - Ghi nhận cảm xúc nhân viên lúc check-in (có thể dùng cho HR analytics).
+   - Phát hiện đeo khẩu trang -> tự động điều chỉnh ngưỡng nhận diện.
+   - Đánh giá chất lượng ảnh real-time -> hướng dẫn người dùng ngay trên camera.
+
+4. Hệ thống nghiệp vụ hoàn chỉnh
+   - Không chỉ nhận diện mà còn tích hợp: tính lương, báo cáo, phục hồi công.
+   - Đây là một sản phẩm có thể dùng được thực tế, không chỉ là prototype AI.
+
+5. Kiến trúc sạch và có thể mở rộng
+   - Blueprint pattern: dễ thêm module mới.
+   - ORM: dễ chuyển đổi database.
+   - Docker: dễ deploy lên bất kỳ server nào.
+
+
+===========================================================================
+PHẦN 4: CÁC CÂU HỎI HỘI ĐỒNG HAY HỎI VÀ GỢI Ý TRẢ LỜI
+===========================================================================
+
+Câu 1: "Độ chính xác nhận diện của hệ thống là bao nhiêu %?"
+  -> Nêu kết quả thực nghiệm cụ thể (đã test trên bao nhiêu người, bao nhiêu lần).
+  -> InsightFace buffalo_l có độ chính xác ~99.7% trên tập LFW benchmark.
+  -> Thực tế tuỳ điều kiện ánh sáng và chất lượng camera.
+
+Câu 2: "Mất bao lâu để xử lý một lần check-in?"
+  -> Cần đo thực tế. Ước tính: 1-3 giây trên CPU thông thường.
+  -> Phần lâu nhất là InsightFace (khoảng 500ms-1s trên CPU).
+  -> Nếu có GPU có thể giảm xuống dưới 200ms.
+
+Câu 3: "Nếu người dùng đổi tóc/đeo kính có nhận ra không?"
+  -> InsightFace hoạt động dựa trên cấu trúc xương mặt, không phải màu tóc.
+  -> Đội kính gọng mỏng vẫn nhận được, kính đen to có thể giảm độ chính xác.
+  -> Tính năng auto-update encoding giúp hệ thống thích nghi dần.
+
+Câu 4: "Dữ liệu khuôn mặt được lưu như thế nào? Có an toàn không?"
+  -> Hệ thống KHÔNG lưu ảnh khuôn mặt gốc.
+  -> Chỉ lưu vector embedding (512 số thực) - không thể tái tạo lại ảnh từ đây.
+  -> Đây là thiết kế bảo vệ quyền riêng tư (privacy-preserving).
+
+Câu 5: "Nếu database bị tấn công, embedding có bị lộ không?"
+  -> Người tấn công lấy được vector embedding nhưng không thể tái tạo ảnh.
+  -> Để dùng embedding tấn công lại hệ thống: cần inject thẳng vào API,
+     không thể giả mạo qua camera vì vẫn phải qua anti-spoofing + liveness.
+
+Câu 6: "Tại sao chọn InsightFace mà không dùng face_recognition (dlib)?"
+  -> face_recognition (dlib) dùng mô hình cũ hơn, embedding 128 chiều.
+  -> InsightFace buffalo_l dùng ArcFace loss, embedding 512 chiều, chính xác hơn.
+  -> InsightFace hỗ trợ detection + alignment + recognition trong một pipeline.
+  -> Thực tế dự án cài cả hai, dlib dùng riêng cho landmark detection (68 điểm).
+
+Câu 7: "Liveness detection có thể bị qua mặt bằng video không?"
+  -> Video deepfake chất lượng cao có thể thách thức liveness đơn giản.
+  -> Hệ thống này là nghiên cứu, chưa tích hợp 3D depth sensor (như Face ID).
+  -> Có thể đề xuất hướng phát triển: dùng IR camera hoặc structured light.
+
+Câu 8: "Hệ thống xử lý trường hợp 2 người giống nhau (sinh đôi) thế nào?"
+  -> InsightFace có độ phân biệt cao kể cả với người sinh đôi.
+  -> Về lý thuyết: embedding của người sinh đôi vẫn khác nhau dù rất nhỏ.
+  -> Ngưỡng 0.35 giúp phân biệt, nhưng đây là hạn chế chấp nhận được.
+
+Câu 9: "Docker dùng để làm gì? Có cần thiết không?"
+  -> Docker đóng gói toàn bộ ứng dụng + dependencies vào container.
+  -> Đảm bảo chạy được trên mọi máy tính mà không cần cài đặt thủ công.
+  -> Quan trọng với dự án AI vì dependencies nhiều và phức tạp (dlib, onnx...).
+
+Câu 10: "Nếu mất điện giữa chừng, hệ thống có mất dữ liệu không?"
+  -> SQLite đảm bảo ACID - mỗi transaction hoặc commit hoàn toàn hoặc rollback.
+  -> Docker volume mount ra ngoài container nên database không mất khi container down.
+  -> Bảng session tự động clean up khi expired.
+
+
+===========================================================================
+PHẦN 5: GỢI Ý NỘI DUNG TỪNG SLIDE (CHI TIẾT HƠN)
+===========================================================================
+
+Slide - Pipeline AI (quan trọng nhất, nên vẽ sơ đồ)
+---------------------------------------------------------------------------
+
+  [Ảnh từ camera]
+       |
+       v
+  [Tiền xử lý: resize, cân chỉnh sáng]
+       |
+       v
+  [Phát hiện khuôn mặt: InsightFace det_size 640x640]
+       | thất bại -> thử 320x320 -> thử CLAHE enhance
+       v
+  [Trích xuất embedding: vector 512 chiều]
+       |
+       v
+  [Chuẩn hóa L2 norm]
+       |
+       v
+  [So sánh cosine distance với tất cả embedding trong DB]
+       |
+       v
+  [Kết quả: nhận ra / không nhận ra + confidence score]
+
+  Ghi chú trong slide:
+  - "buffalo_l model" đã được pre-trained, không cần train lại từ đầu
+  - Chỉ cần chụp 5 ảnh mỗi nhân viên là đủ (không cần hàng nghìn ảnh)
+  - Thời gian xử lý ~1-3 giây trên CPU
+
+Slide - 4 Lớp Anti-Spoofing (nên dùng bảng hoặc hình minh họa)
+---------------------------------------------------------------------------
+
+  Lớp 1: LBP Texture Analysis
+    Phân tích texture vi mô của da mặt.
+    Da thật -> entropy cao -> thật
+    Màn hình/ảnh in -> entropy thấp -> từ chối
+
+  Lớp 2: 3D Depth Estimation
+    Ước tính chiều sâu của khuôn mặt.
+    Mặt thật có cấu trúc 3D -> thật
+    Ảnh phẳng không có chiều sâu -> từ chối
+
+  Lớp 3: Moiré Pattern (FFT)
+    Phân tích tần số cao của ảnh.
+    Màn hình điện tử tạo ra Moiré pattern -> từ chối
+    Da thật không có pattern này -> thật
+
+  Lớp 4: Screen Reflection
+    Phát hiện ánh phản chiếu đặc trưng của màn hình.
+    Màn hình phản chiếu ánh sáng khác da người -> từ chối
+
+  -> TẤT CẢ 4 lớp phải PASS mới cho phép nhận diện
+
+Slide - Liveness Detection (nên có hình ảnh minh họa 3 hành động)
+---------------------------------------------------------------------------
+
+  Chớp mắt:
+    Đo Eye Aspect Ratio (EAR) qua 6 landmark điểm mắt
+    EAR < 0.25 -> đang nhắm mắt -> phát hiện chớp
+
+  Cười:
+    Đo tỷ lệ rộng/cao của miệng qua landmark
+    Tỷ lệ > 3.0 -> đang cười -> phát hiện
+
+  Cử động đầu:
+    Theo dõi góc yaw/roll qua nhiều frame
+    Thay đổi > 6 độ -> có chuyển động -> phát hiện
+
+  Chỉ cần 1 trong 3 hành động là đủ
+  Session tự hết hạn sau 5 giây nếu không phát hiện
+
+Slide - Kết quả thực nghiệm (cần số liệu cụ thể)
+---------------------------------------------------------------------------
+
+  Nên đưa vào ít nhất:
+  - Số nhân viên test: ...
+  - Số lần nhận diện đúng / tổng số lần test: ...
+  - Độ chính xác: ...%
+  - Thời gian trung bình xử lý mỗi request: ...ms
+  - Kết quả test anti-spoofing: thử N lần bằng ảnh -> từ chối N/N
+  - Kết quả test liveness: thử N lần bằng video -> từ chối N/N
+
+
+===========================================================================
+PHẦN 6: NHỮNG LỖI THƯỜNG GẶP KHI THUYẾT TRÌNH
+===========================================================================
+
+1. Giải thích quá kỹ thuật
+   -> Hội đồng không phải lúc nào cũng là chuyên gia AI.
+   -> Luôn kèm ví dụ thực tế, tránh dùng thuật ngữ mà không giải thích.
+
+2. Không có số liệu cụ thể
+   -> "Hệ thống hoạt động tốt" là không đủ.
+   -> Phải có: độ chính xác, thời gian xử lý, số lần test.
+
+3. Bỏ qua phần hạn chế
+   -> Hội đồng sẽ hỏi. Chủ động nêu hạn chế trước sẽ gây ấn tượng tốt hơn.
+   -> Hạn chế thực tế: cần ánh sáng tốt, chạy CPU nên còn chậm, SQLite
+      chưa phù hợp khi có hàng nghìn người dùng đồng thời.
+
+4. Không demo được
+   -> Nên chuẩn bị video demo sẵn phòng trường hợp không có internet.
+   -> Demo live nếu được: ấn tượng hơn nhiều so với ảnh chụp màn hình.
+
+5. Không nắm được code của nhóm
+   -> Hội đồng hay hỏi: "Em viết phần nào?", "Đoạn code này hoạt động ra sao?"
+   -> Cần biết ít nhất: facial_service.py, attendance_service.py, auth_service.py.
+
+===========================================================================

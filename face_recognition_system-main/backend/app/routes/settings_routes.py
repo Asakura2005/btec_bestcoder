@@ -1,10 +1,11 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.models.settings import Settings
 from app.models.attendance import Attendance
 from app.models.face_training_data import FaceTrainingData
 from app.models.employee import Employee
 from app.models.admin import Admin
 from app.utils.decorators import admin_required
+from app.utils.helpers import get_vn_datetime
 from app.db import db
 from datetime import datetime, timedelta
 import os
@@ -50,7 +51,7 @@ def cleanup_old_data():
         return jsonify({"message": "Data retention not configured or disabled"}), 200
 
     try:
-        cutoff_date = datetime.now() - timedelta(days=data_retention_days)
+        cutoff_date = get_vn_datetime() - timedelta(days=data_retention_days)
         records_to_delete = Attendance.query.filter(Attendance.timestamp < cutoff_date).all()
         
         deleted_count = 0
@@ -71,15 +72,21 @@ def create_backup():
     """Tạo bản sao lưu cơ sở dữ liệu."""
     try:
         db_path = db.engine.url.database
-        backup_dir = "backups"
+        # Use absolute path relative to the application root for reliability
+        backend_root = os.path.abspath(os.path.join(current_app.root_path, '..'))
+        backup_dir = os.path.join(backend_root, 'backups')
         os.makedirs(backup_dir, exist_ok=True)
-        backup_filename = f"database_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        backup_filename = f"database_backup_{get_vn_datetime().strftime('%Y%m%d_%H%M%S')}.db"
         backup_path = os.path.join(backup_dir, backup_filename)
         
         if not os.access(backup_dir, os.W_OK):
             return jsonify({"error": "No write permission for backup directory"}), 500
         
-        if os.path.exists(db_path):
+        # Resolve db_path to absolute if relative
+        if db_path and not os.path.isabs(db_path):
+            db_path = os.path.join(backend_root, db_path)
+        
+        if db_path and os.path.exists(db_path):
             shutil.copyfile(db_path, backup_path)
             return jsonify({"message": f"Database backup created at {backup_path}"}), 200
         else:

@@ -9,26 +9,18 @@
         </h3>
       </div>
       <div class="header-controls">
-        <v-select
-          v-model="selectedMonth"
-          :items="months"
-          item-title="label"
-          item-value="value"
-          label="Month"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="month-select"
-        />
-        <v-select
-          v-model="selectedYear"
-          :items="years"
-          label="Year"
-          variant="outlined"
-          density="compact"
-          hide-details
-          class="year-select"
-        />
+        <div class="native-select-wrap">
+          <select v-model="selectedMonth" class="native-select">
+            <option v-for="m in months" :key="m.value" :value="m.value">{{ m.label }}</option>
+          </select>
+          <v-icon size="18" class="select-arrow">mdi-chevron-down</v-icon>
+        </div>
+        <div class="native-select-wrap year-wrap">
+          <select v-model="selectedYear" class="native-select">
+            <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+          </select>
+          <v-icon size="18" class="select-arrow">mdi-chevron-down</v-icon>
+        </div>
         <v-btn color="primary" variant="flat" @click="loadPayroll" :loading="loading" prepend-icon="mdi-magnify">
           View
         </v-btn>
@@ -323,8 +315,44 @@ export default {
   display: flex; align-items: center;
 }
 .header-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.month-select { max-width: 140px; }
-.year-select { max-width: 100px; }
+
+/* Native select styling */
+.native-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.native-select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1.5px solid #c4c9d4;
+  border-radius: 8px;
+  padding: 8px 36px 8px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+  background: white;
+  cursor: pointer;
+  outline: none;
+  min-width: 120px;
+  transition: border-color 0.2s;
+}
+.native-select:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+.native-select:hover {
+  border-color: #6366f1;
+}
+.year-wrap .native-select {
+  min-width: 85px;
+}
+.select-arrow {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+  color: #94a3b8;
+}
 
 .summary-cards {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;

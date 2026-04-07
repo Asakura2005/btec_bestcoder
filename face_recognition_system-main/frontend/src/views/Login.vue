@@ -321,7 +321,7 @@ const usernameRules = [
 
 const passwordRules = [
   v => !!v || 'Password cannot be empty.',
-  v => v.length >= 6 || 'Password must have at least 3 characters',
+  v => v.length >= 6 || 'Password must have at least 6 characters',
 ]
 
 const emailRules = [

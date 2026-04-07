@@ -519,7 +519,10 @@ formatHistoryDate(dateString) {
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      context.translate(canvas.width, 0);
+      context.scale(-1, 1);
       context.drawImage(video, 0, 0);
+      context.setTransform(1, 0, 0, 1, 0, 0);
 
       try {
         const base64Image = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
@@ -616,7 +619,10 @@ formatHistoryDate(dateString) {
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
         context.drawImage(video, 0, 0);
+        context.setTransform(1, 0, 0, 1, 0, 0);
         
         const base64Image = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
         const res = await api.post('/api/face-quality', { base64_image: base64Image });

@@ -106,7 +106,7 @@ def set_employee_password_route(employee_id):
     username = data.get('username') # Admin có thể tùy chọn đặt username khác
 
     if not new_password:
-        return jsonify({"error": "Password canot be empty"}), 400
+        return jsonify({"error": "Password cannot be empty"}), 400
 
     result, error, status = set_employee_password_logic(employee_id, new_password, username)
     if error:

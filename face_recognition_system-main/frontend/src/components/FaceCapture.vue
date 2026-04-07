@@ -211,7 +211,10 @@ export default defineComponent({
       canvas.width = video.value.videoWidth
       canvas.height = video.value.videoHeight
       const ctx = canvas.getContext('2d')
+      ctx.translate(canvas.width, 0)
+      ctx.scale(-1, 1)
       ctx.drawImage(video.value, 0, 0)
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
       
       return new Promise(resolve => {
         canvas.toBlob(resolve, 'image/jpeg', 0.9)

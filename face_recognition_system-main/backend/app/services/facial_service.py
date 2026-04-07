@@ -115,7 +115,7 @@ class LivenessChecker:
         ratio = (width / height) if height else 0
         return ratio > 3.0
 
-    def detect_head_movement(self, frames_data, min_distance=6.0):
+    def detect_head_movement(self, frames_data, min_distance=15.0):
         """Simple head movement detection - just check angle changes"""
         if len(frames_data) < 5:
             return False
@@ -143,8 +143,8 @@ class LivenessChecker:
 # Global Liveness Session Management
 # --------------------------------------------------
 LIVENESS_SESSIONS = {}
-SESSION_TIMEOUT_SECONDS = 5
-MAX_FRAMES_PER_SESSION = 30
+SESSION_TIMEOUT_SECONDS = 10
+MAX_FRAMES_PER_SESSION = 50
 
 # --------------------------------------------------
 # Main Service Class
@@ -317,24 +317,27 @@ class FacialRecognitionService:
                 if checker.detect_head_movement(session_data['frames_data']):
                     session_data['head_movement_detected'] = True
 
-            # Pass if any action detected
+            # Must pass at least 2 of 3 liveness actions to prevent phone photo bypass
             actions_detected = [
                 session_data['blink_detected'],
                 session_data['smile_detected'], 
                 session_data['head_movement_detected']
             ]
             
-            if any(actions_detected):
+            if sum(actions_detected) >= 2:
                 session_data['liveness_passed'] = True
                 detected = [a for a, d in zip(['blink', 'smile', 'head movement'], actions_detected) if d]
                 return True, f"Liveness passed: {', '.join(detected)}"
+            elif sum(actions_detected) == 1:
+                detected = [a for a, d in zip(['blink', 'smile', 'head movement'], actions_detected) if d]
+                return False, f"Detected: {', '.join(detected)}. Need 1 more action. Please blink, smile, or move your head."
             else:
                 # Check timeout
                 if session_data['frames_data'] and \
                    (current_time - session_data['frames_data'][0]['timestamp']).total_seconds() > SESSION_TIMEOUT_SECONDS:
                     del LIVENESS_SESSIONS[session_id]
-                    return False, "Liveness timeout. Please blink, smile, or move your head."
-                return False, "Please blink, smile, or gently move your head."
+                    return False, "Liveness timeout. Please blink, smile, and move your head (2 actions required)."
+                return False, "Please blink, smile, or move your head (2 actions required)."
         
         return True, "Liveness check successful"
 
@@ -431,25 +434,43 @@ class FacialRecognitionService:
     @staticmethod
     def recognize_face_with_liveness(img, session_id: str):
         """Recognition with liveness check + multi-layer anti-spoofing"""
-        # Layer 1: LBP texture + basic frequency analysis
+        combined_spoof_score = 0.0
+        spoof_details = []
+        all_reasons = []
+
+        # Layer 1: LBP texture + color uniformity
         is_real, spoof_score, spoof_msg = FacialRecognitionService.detect_screen_spoofing(img)
+        combined_spoof_score += spoof_score
+        spoof_details.append(f"texture={spoof_score:.2f}")
         if not is_real:
-            return False, f"Anti-spoofing failed: {spoof_msg}", None
+            all_reasons.append(spoof_msg)
 
         # Layer 2: 3D depth estimation
         depth_real, depth_score, depth_msg = FacialRecognitionService.detect_depth_spoofing(img)
+        combined_spoof_score += depth_score
+        spoof_details.append(f"depth={depth_score:.2f}")
         if not depth_real:
-            return False, f"Depth anti-spoofing failed: {depth_msg}", None
+            all_reasons.append(depth_msg)
 
         # Layer 3: Moiré pattern (phone screen pixel grid)
         moire_real, moire_score, moire_msg = FacialRecognitionService.detect_moire_pattern(img)
+        combined_spoof_score += moire_score
+        spoof_details.append(f"moire={moire_score:.2f}")
         if not moire_real:
-            return False, f"Moiré detection: {moire_msg}", None
+            all_reasons.append(moire_msg)
 
         # Layer 4: Screen reflection/glare
         reflect_real, reflect_score, reflect_msg = FacialRecognitionService.detect_screen_reflection(img)
+        combined_spoof_score += reflect_score
+        spoof_details.append(f"reflect={reflect_score:.2f}")
         if not reflect_real:
-            return False, f"Reflection detection: {reflect_msg}", None
+            all_reasons.append(reflect_msg)
+
+        # ONLY combined score triggers rejection — individual layers never reject alone
+        COMBINED_THRESHOLD = 1.2
+        print(f"[AntiSpoof-Combined] total={combined_spoof_score:.2f}, details=[{', '.join(spoof_details)}]")
+        if combined_spoof_score >= COMBINED_THRESHOLD:
+            return False, f"Anti-spoofing failed: cumulative suspicion score {combined_spoof_score:.2f} exceeds threshold", None
 
         # Liveness challenge
         live_ok, live_msg = FacialRecognitionService.detect_liveness(img, session_id)
@@ -504,29 +525,15 @@ class FacialRecognitionService:
             # Entropy - real faces have higher entropy (more varied texture)
             lbp_entropy = -np.sum(lbp_hist[lbp_hist > 0] * np.log2(lbp_hist[lbp_hist > 0]))
             
-            # --- 2. Frequency Analysis (Moiré detection) ---
-            f_transform = np.fft.fft2(face_region.astype(float))
-            f_shift = np.fft.fftshift(f_transform)
-            magnitude = np.log(np.abs(f_shift) + 1)
-            
-            # High-frequency energy ratio
-            cy, cx = magnitude.shape[0] // 2, magnitude.shape[1] // 2
-            radius = min(cy, cx) // 3
-            mask_high = np.ones_like(magnitude)
-            cv2.circle(mask_high, (cx, cy), radius, 0, -1)
-            high_freq_energy = np.sum(magnitude * mask_high)
-            total_energy = np.sum(magnitude) + 1e-7
-            hf_ratio = high_freq_energy / total_energy
-            
-            # --- 3. Color Uniformity (screens have less natural color variation) ---
+            # --- 2. Color Uniformity (screens have less natural color variation) ---
             hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
             saturation = hsv[:, :, 1]
             sat_std = np.std(saturation[margin_y:h-margin_y, margin_x:w-margin_x])
             
-            # --- Scoring ---
-            # Higher entropy = more likely real (threshold ~5.5)
-            # Lower hf_ratio = more likely real (screens show moiré = high freq)
+            # Higher entropy = more likely real (threshold ~5.2)
             # Higher sat_std = more likely real (natural skin has varied saturation)
+            # Note: hf_ratio removed - webcam noise makes it always ~0.9 for all inputs
+            # Moiré detection is handled by dedicated Layer 3 (detect_moire_pattern)
             
             spoof_score = 0.0
             reasons = []
@@ -537,12 +544,6 @@ class FacialRecognitionService:
             elif lbp_entropy < 5.6:
                 spoof_score += 0.2
             
-            if hf_ratio > 0.6:
-                spoof_score += 0.3
-                reasons.append("moiré pattern detected")
-            elif hf_ratio > 0.5:
-                spoof_score += 0.15
-            
             if sat_std < 20:
                 spoof_score += 0.3
                 reasons.append("abnormal color uniformity")
@@ -551,7 +552,7 @@ class FacialRecognitionService:
             
             is_real = spoof_score < 0.4
             
-            print(f"[AntiSpoof] entropy={lbp_entropy:.2f}, hf_ratio={hf_ratio:.3f}, "
+            print(f"[AntiSpoof] entropy={lbp_entropy:.2f}, "
                   f"sat_std={sat_std:.1f}, score={spoof_score:.2f}, real={is_real}")
             
             if not is_real:
@@ -562,7 +563,7 @@ class FacialRecognitionService:
             
         except Exception as e:
             print(f"[AntiSpoof] Error: {e}")
-            return True, 0.5, f"Analysis error: {str(e)}"
+            return False, 1.0, f"Anti-spoofing analysis error (rejected for safety): {str(e)}"
 
     # --------------------------------------------------
     # Emotion Detection
@@ -982,7 +983,7 @@ class FacialRecognitionService:
             
         except Exception as e:
             print(f"[DepthSpoof] Error: {e}")
-            return True, 0.5, f"Depth analysis error: {str(e)}"
+            return False, 1.0, f"Depth analysis error (rejected for safety): {str(e)}"
 
     # --------------------------------------------------
     # Moiré Pattern Detection (Phone Screen Pixel Grid)
@@ -1103,7 +1104,7 @@ class FacialRecognitionService:
             
         except Exception as e:
             print(f"[MoiréDetect] Error: {e}")
-            return True, 0.0, f"Moiré analysis error: {str(e)}"
+            return False, 1.0, f"Moiré analysis error (rejected for safety): {str(e)}"
 
     # --------------------------------------------------
     # Screen Reflection / Glare Detection
@@ -1212,4 +1213,4 @@ class FacialRecognitionService:
             
         except Exception as e:
             print(f"[ReflectDetect] Error: {e}")
-            return True, 0.0, f"Reflection analysis error: {str(e)}"
+            return False, 1.0, f"Reflection analysis error (rejected for safety): {str(e)}"
