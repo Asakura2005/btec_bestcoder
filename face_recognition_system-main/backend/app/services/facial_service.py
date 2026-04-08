@@ -6,6 +6,7 @@ import cv2
 import dlib
 import numpy as np
 import insightface
+import onnxruntime
 
 # === Local imports ===
 from app.models.employee import Employee
@@ -30,6 +31,75 @@ _face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
 # Fallback analyzer with smaller det-size for low-res images
 _face_analyzer_small = insightface.app.FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
 _face_analyzer_small.prepare(ctx_id=0, det_size=(320, 320))
+
+# Anti-Spoofing Dedicated AI (MiniFASNetV2)
+ANTISPOOF_MODEL_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "weights", "MiniFASNetV2.onnx"))
+
+class AntiSpoofAI:
+    def __init__(self, model_path):
+        self.session = None
+        if os.path.exists(model_path):
+            try:
+                self.session = onnxruntime.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+                print(f"[AntiSpoofAI] Loaded model from {model_path}")
+            except Exception as e:
+                print(f"[AntiSpoofAI] Failed to load model: {e}")
+        else:
+            print(f"[AntiSpoofAI] Warning: Model file not found at {model_path}")
+
+    def predict(self, img_bgr, bbox):
+        """Returns (is_real, score, msg)"""
+        if self.session is None:
+            return True, 0.0, "AI model not loaded"
+
+        try:
+            h, w = img_bgr.shape[:2]
+            x1, y1, x2, y2 = bbox
+            fw, fh = x2 - x1, y2 - y1
+            
+            # MiniFASNetV2 expects a specific scale (2.7)
+            # We need to expand the bbox slightly to include context
+            cx, cy = x1 + fw/2, y1 + fh/2
+            size = max(fw, fh) * 2.7
+            nx1 = max(0, int(cx - size/2))
+            ny1 = max(0, int(cy - size/2))
+            nx2 = min(w, int(cx + size/2))
+            ny2 = min(h, int(cy + size/2))
+            
+            face_img = img_bgr[ny1:ny2, nx1:nx2]
+            if face_img.size == 0:
+                return True, 0.0, "Invalid crop"
+
+            # Preprocessing
+            # Resize to 80x80
+            face_img = cv2.resize(face_img, (80, 80))
+            # BGR to RGB
+            face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+            # Normalize and transpose (HWC to CHW)
+            face_img = face_img.astype(np.float32)
+            face_img = np.transpose(face_img, (2, 0, 1))
+            face_img = np.expand_dims(face_img, axis=0) # Add batch dim
+
+            # Run inference
+            input_name = self.session.get_inputs()[0].name
+            outputs = self.session.run(None, {input_name: face_img})
+            
+            # Post-processing (softmax)
+            logits = outputs[0][0]
+            exp_logits = np.exp(logits - np.max(logits))
+            probs = exp_logits / exp_logits.sum()
+            
+            # Class 1 is Real, Class 0 is Fake (depends on the model training, 
+            # for MiniFASNetV2 usually 1 is real)
+            is_real_score = probs[1]
+            is_real = is_real_score > 0.7  # Higher confidence required for real
+            
+            return is_real, 1.0 - is_real_score, f"AI Confidence: {is_real_score:.2f}"
+        except Exception as e:
+            print(f"[AntiSpoofAI] Prediction error: {e}")
+            return True, 0.0, f"Error: {e}"
+
+_antispoof_ai = AntiSpoofAI(ANTISPOOF_MODEL_PATH)
 
 def _preprocess_image(img):
     """Preprocess image to improve face detection reliability."""
@@ -466,15 +536,12 @@ class FacialRecognitionService:
                 
                 prev_crops = session_data['prev_crops']
                 if len(prev_crops) >= 2:
-                    # Compare current frame with previous frames
                     similarities = []
                     for prev in prev_crops[-3:]:
                         diff = np.mean(np.abs(gray_crop - prev))
                         similarities.append(diff)
                     
                     avg_diff = np.mean(similarities)
-                    # Real faces: avg_diff typically > 3.0 due to sensor noise
-                    # Screens: avg_diff typically < 2.0 (nearly identical pixels)
                     if avg_diff < 2.0:
                         frame_score = 0.4
                         combined_spoof_score += frame_score
@@ -493,7 +560,35 @@ class FacialRecognitionService:
         except Exception as e:
             print(f"[FrameConsistency] Error: {e}")
 
-        # ONLY combined score triggers rejection — individual layers never reject alone
+        # Layer 6: Deep Learning Anti-Spoofing (Option 1)
+        # This is the most powerful layer, uses a specialized CNN
+        try:
+            faces = _detect_faces_robust(img)
+            if faces:
+                bbox = faces[0].bbox.astype(int)
+                ai_real, ai_score, ai_msg = _antispoof_ai.predict(img, bbox)
+                
+                # Trust AI heavily
+                if not ai_real:
+                    # If AI detects spoof, add heavy penalty
+                    ai_weight = 0.7 if ai_score > 0.8 else 0.5
+                    combined_spoof_score += ai_weight
+                    spoof_details.append(f"ai_dl={ai_weight:.2f}")
+                    all_reasons.append(f"AI: {ai_msg}")
+                    print(f"[AntiSpoof-AI] Suspicious: {ai_msg}")
+                else:
+                    # If AI is extremely confident it's real (>0.9), ignore minor heuristic warnings
+                    ai_confidence = 1.0 - ai_score
+                    if ai_confidence > 0.92:
+                        print(f"[AntiSpoof-AI] High confidence REAL ({ai_confidence:.2f}), clearing score")
+                        combined_spoof_score = 0.0
+                        spoof_details.append("ai_dl=REAL_WIN")
+                    else:
+                        print(f"[AntiSpoof-AI] Moderate confidence REAL ({ai_confidence:.2f})")
+        except Exception as e:
+            print(f"[AntiSpoof-AI] Error: {e}")
+
+        # ONLY combined score triggers rejection
         COMBINED_THRESHOLD = 0.5
         print(f"[AntiSpoof-Combined] total={combined_spoof_score:.2f}, details=[{', '.join(spoof_details)}]")
         
