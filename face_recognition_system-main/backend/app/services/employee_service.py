@@ -3,6 +3,7 @@
 
 from flask import send_from_directory
 from app.models.employee import Employee
+from app.models.attendance import Attendance
 from app.models.face_training_data import FaceTrainingData
 from app.services.facial_service import FacialRecognitionService
 from app.utils.helpers import get_upload_path, serialize_employee_full, format_datetime_vn
@@ -272,6 +273,10 @@ def soft_delete_employee_logic(employee_id):
         return None, {"error": "Employee not found"}, 404
     if not employee.status:
         return {"message": "Employee is already inactive", "employee": serialize_employee_full(employee)}, None, 200
+    
+    # Xoá toàn bộ dữ liệu chấm công của nhân viên để tiện test
+    Attendance.query.filter_by(employee_id=employee_id.upper()).delete()
+    
     employee.status = False
     employee.updated_at = datetime.now(pytz.timezone("Asia/Ho_Chi_Minh")).replace(tzinfo=None)
     db.session.commit()

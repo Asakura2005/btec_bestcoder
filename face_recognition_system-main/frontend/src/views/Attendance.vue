@@ -25,14 +25,6 @@
         <p class="header-subtitle">Attendance Management System</p>
       </div>
 
-      <div v-if="error" class="error-alert">
-        <div class="error-content">
-          <AlertCircle />
-          <span>Error</span>
-        </div>
-        <p>{{ error }}</p>
-      </div>
-
       <div class="card">
         <!-- Camera Section -->
         <div v-if="currentStep === 'camera'" class="section">

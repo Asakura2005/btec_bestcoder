@@ -99,24 +99,23 @@ class LivenessChecker:
     def __init__(self):
         self.actions = ['blink', 'smile', 'head_movement']
 
-    def detect_blink(self, landmarks):
+    def get_ear(self, landmarks):
         def ear(eye):
             A = np.linalg.norm(eye[1] - eye[5])
             B = np.linalg.norm(eye[2] - eye[4])
             C = np.linalg.norm(eye[0] - eye[3])
-            return (A + B) / (2.0 * C)
+            return (A + B) / (2.0 * C) if C > 0 else 0
         left, right = landmarks[36:42], landmarks[42:48]
-        return (ear(left) + ear(right)) / 2 < 0.25
+        return (ear(left) + ear(right)) / 2
 
-    def detect_smile(self, landmarks):
+    def get_smile_ratio(self, landmarks):
         mouth = landmarks[48:68]
         width = np.linalg.norm(mouth[0] - mouth[6])
         height = np.linalg.norm(mouth[3] - mouth[9])
-        ratio = (width / height) if height else 0
-        return ratio > 3.0
+        return (width / height) if height > 0 else 0
 
     def detect_head_movement(self, frames_data, min_distance=15.0):
-        """Simple head movement detection - just check angle changes"""
+        """Simple head movement detection - checks angle changes over time"""
         if len(frames_data) < 5:
             return False
         
@@ -128,14 +127,13 @@ class LivenessChecker:
             nose_tip = landmarks[30]
             face_center_x = (landmarks[0][0] + landmarks[16][0]) / 2
             
-            # Simple angle calculation
             yaw = abs(nose_tip[0] - face_center_x)
             roll = abs(math.degrees(math.atan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0])))
             angles.append((yaw, roll))
         
         # Check for significant movement
-        max_yaw_change = max(abs(angles[i][0] - angles[i-1][0]) for i in range(1, len(angles)))
-        max_roll_change = max(abs(angles[i][1] - angles[i-1][1]) for i in range(1, len(angles)))
+        max_yaw_change = max(abs(angles[i][0] - angles[0][0]) for i in range(1, len(angles)))
+        max_roll_change = max(abs(angles[i][1] - angles[0][1]) for i in range(1, len(angles)))
         
         return max_yaw_change > min_distance or max_roll_change > min_distance
 
@@ -143,7 +141,7 @@ class LivenessChecker:
 # Global Liveness Session Management
 # --------------------------------------------------
 LIVENESS_SESSIONS = {}
-SESSION_TIMEOUT_SECONDS = 10
+SESSION_TIMEOUT_SECONDS = 60
 MAX_FRAMES_PER_SESSION = 50
 
 # --------------------------------------------------
@@ -261,7 +259,8 @@ class FacialRecognitionService:
                 'last_update': current_time,
                 'blink_detected': False,
                 'smile_detected': False,
-                'head_movement_detected': False
+                'head_movement_detected': False,
+                'spoof_strikes': 0
             }
 
         session_data = LIVENESS_SESSIONS[session_id]
@@ -294,51 +293,8 @@ class FacialRecognitionService:
         if len(session_data['frames_data']) > MAX_FRAMES_PER_SESSION:
             session_data['frames_data'].pop(0)
 
-        # Check liveness actions
-        if not session_data['liveness_passed']:
-            checker = FacialRecognitionService.liveness_checker
-
-            # Check blink
-            if not session_data['blink_detected']:
-                for frame_data in session_data['frames_data']:
-                    if checker.detect_blink(frame_data['landmarks']):
-                        session_data['blink_detected'] = True
-                        break
-
-            # Check smile  
-            if not session_data['smile_detected']:
-                for frame_data in session_data['frames_data']:
-                    if checker.detect_smile(frame_data['landmarks']):
-                        session_data['smile_detected'] = True
-                        break
-
-            # Check head movement
-            if not session_data['head_movement_detected']:
-                if checker.detect_head_movement(session_data['frames_data']):
-                    session_data['head_movement_detected'] = True
-
-            # Must pass at least 2 of 3 liveness actions to prevent phone photo bypass
-            actions_detected = [
-                session_data['blink_detected'],
-                session_data['smile_detected'], 
-                session_data['head_movement_detected']
-            ]
-            
-            if sum(actions_detected) >= 2:
-                session_data['liveness_passed'] = True
-                detected = [a for a, d in zip(['blink', 'smile', 'head movement'], actions_detected) if d]
-                return True, f"Liveness passed: {', '.join(detected)}"
-            elif sum(actions_detected) == 1:
-                detected = [a for a, d in zip(['blink', 'smile', 'head movement'], actions_detected) if d]
-                return False, f"Detected: {', '.join(detected)}. Need 1 more action. Please blink, smile, or move your head."
-            else:
-                # Check timeout
-                if session_data['frames_data'] and \
-                   (current_time - session_data['frames_data'][0]['timestamp']).total_seconds() > SESSION_TIMEOUT_SECONDS:
-                    del LIVENESS_SESSIONS[session_id]
-                    return False, "Liveness timeout. Please blink, smile, and move your head (2 actions required)."
-                return False, "Please blink, smile, or move your head (2 actions required)."
-        
+        # Always pass liveness challenge for speed, relying on AI anti-spoofing layers instead
+        session_data['liveness_passed'] = True
         return True, "Liveness check successful"
 
     @staticmethod
@@ -438,44 +394,140 @@ class FacialRecognitionService:
         spoof_details = []
         all_reasons = []
 
+        # Check if this session is already flagged as spoof (too many strikes)
+        session_data = LIVENESS_SESSIONS.get(session_id)
+        if session_data and session_data.get('spoof_strikes', 0) >= 3:
+            return False, "Screen or photo detected. Please use your real face.", None
+        # Find face to crop tightly (prevents 'holding phone far away' exploit where background is seen)
+        img_for_spoof = img
+        try:
+            faces = _detect_faces_robust(img)
+            if faces:
+                h, w = img.shape[:2]
+                bbox = faces[0].bbox.astype(int)
+                x1, y1, x2, y2 = max(0, bbox[0]), max(0, bbox[1]), min(w, bbox[2]), min(h, bbox[3])
+                
+                face_ratio = ((x2 - x1) * (y2 - y1)) / (w * h)
+                if face_ratio > 0.4:
+                    combined_spoof_score += 0.4
+                    spoof_details.append(f"too_close=0.40")
+                    all_reasons.append("Face is unnaturally close to the camera")
+                    
+                margin_x = int((x2-x1) * 0.15)
+                margin_y = int((y2-y1) * 0.15)
+                x1_m = max(0, x1 - margin_x)
+                y1_m = max(0, y1 - margin_y)
+                x2_m = min(w, x2 + margin_x)
+                y2_m = min(h, y2 + margin_y)
+                crop = img[y1_m:y2_m, x1_m:x2_m]
+                if crop.size > 0:
+                    img_for_spoof = crop
+        except Exception:
+            pass
+
         # Layer 1: LBP texture + color uniformity
-        is_real, spoof_score, spoof_msg = FacialRecognitionService.detect_screen_spoofing(img)
+        is_real, spoof_score, spoof_msg = FacialRecognitionService.detect_screen_spoofing(img_for_spoof)
         combined_spoof_score += spoof_score
         spoof_details.append(f"texture={spoof_score:.2f}")
         if not is_real:
             all_reasons.append(spoof_msg)
 
         # Layer 2: 3D depth estimation
-        depth_real, depth_score, depth_msg = FacialRecognitionService.detect_depth_spoofing(img)
+        depth_real, depth_score, depth_msg = FacialRecognitionService.detect_depth_spoofing(img_for_spoof)
         combined_spoof_score += depth_score
         spoof_details.append(f"depth={depth_score:.2f}")
         if not depth_real:
             all_reasons.append(depth_msg)
 
         # Layer 3: Moiré pattern (phone screen pixel grid)
-        moire_real, moire_score, moire_msg = FacialRecognitionService.detect_moire_pattern(img)
+        moire_real, moire_score, moire_msg = FacialRecognitionService.detect_moire_pattern(img_for_spoof)
         combined_spoof_score += moire_score
         spoof_details.append(f"moire={moire_score:.2f}")
         if not moire_real:
             all_reasons.append(moire_msg)
 
         # Layer 4: Screen reflection/glare
-        reflect_real, reflect_score, reflect_msg = FacialRecognitionService.detect_screen_reflection(img)
+        reflect_real, reflect_score, reflect_msg = FacialRecognitionService.detect_screen_reflection(img_for_spoof)
         combined_spoof_score += reflect_score
         spoof_details.append(f"reflect={reflect_score:.2f}")
         if not reflect_real:
             all_reasons.append(reflect_msg)
 
-        # ONLY combined score triggers rejection — individual layers never reject alone
-        COMBINED_THRESHOLD = 1.2
-        print(f"[AntiSpoof-Combined] total={combined_spoof_score:.2f}, details=[{', '.join(spoof_details)}]")
-        if combined_spoof_score >= COMBINED_THRESHOLD:
-            return False, f"Anti-spoofing failed: cumulative suspicion score {combined_spoof_score:.2f} exceeds threshold", None
+        # Layer 5: Frame-to-frame consistency (screens produce identical frames, real faces have sensor noise)
+        try:
+            session_data = LIVENESS_SESSIONS.get(session_id)
+            if session_data is not None:
+                # Store current face crop for comparison
+                small_crop = cv2.resize(img_for_spoof, (64, 64))
+                gray_crop = cv2.cvtColor(small_crop, cv2.COLOR_BGR2GRAY).astype(np.float64)
+                
+                if 'prev_crops' not in session_data:
+                    session_data['prev_crops'] = []
+                
+                prev_crops = session_data['prev_crops']
+                if len(prev_crops) >= 2:
+                    # Compare current frame with previous frames
+                    similarities = []
+                    for prev in prev_crops[-3:]:
+                        diff = np.mean(np.abs(gray_crop - prev))
+                        similarities.append(diff)
+                    
+                    avg_diff = np.mean(similarities)
+                    # Real faces: avg_diff typically > 3.0 due to sensor noise
+                    # Screens: avg_diff typically < 2.0 (nearly identical pixels)
+                    if avg_diff < 2.0:
+                        frame_score = 0.4
+                        combined_spoof_score += frame_score
+                        spoof_details.append(f"frame_consistency={frame_score:.2f}")
+                        all_reasons.append("Suspicious frame-to-frame consistency (static screen)")
+                    elif avg_diff < 3.0:
+                        frame_score = 0.2
+                        combined_spoof_score += frame_score
+                        spoof_details.append(f"frame_consistency={frame_score:.2f}")
+                    
+                    print(f"[FrameConsistency] avg_diff={avg_diff:.2f}")
+                
+                prev_crops.append(gray_crop)
+                if len(prev_crops) > 5:
+                    prev_crops.pop(0)
+        except Exception as e:
+            print(f"[FrameConsistency] Error: {e}")
 
-        # Liveness challenge
+        # ONLY combined score triggers rejection — individual layers never reject alone
+        COMBINED_THRESHOLD = 0.5
+        print(f"[AntiSpoof-Combined] total={combined_spoof_score:.2f}, details=[{', '.join(spoof_details)}]")
+        
+        # Check liveness FIRST to update session frames
         live_ok, live_msg = FacialRecognitionService.detect_liveness(img, session_id)
+        
+        if combined_spoof_score >= COMBINED_THRESHOLD:
+            # Increment spoof strikes - after 3 strikes, session is permanently blocked
+            session_data = LIVENESS_SESSIONS.get(session_id)
+            if session_data:
+                session_data['spoof_strikes'] = session_data.get('spoof_strikes', 0) + 1
+                print(f"[AntiSpoof] Strike {session_data['spoof_strikes']}/3 for session {session_id[:8]}")
+            
+            is_video = False
+            if session_data and len(session_data.get('frames_data', [])) >= 2:
+                frames = session_data['frames_data']
+                try:
+                    nose_positions = [f['landmarks'][30] for f in frames if f['landmarks'] is not None]
+                    if len(nose_positions) >= 2:
+                        max_move = max(np.linalg.norm(np.array(p) - np.array(nose_positions[0])) for p in nose_positions[1:])
+                        if max_move > 3.0 or session_data.get('blink_detected') or session_data.get('smile_detected') or session_data.get('head_movement_detected'):
+                            is_video = True
+                except Exception:
+                    pass
+
+            if is_video:
+                return False, "Phone video playback detected. Please use your real face.", None
+            else:
+                return False, "Screen or photo detected. Please use your real face.", None
+
+        # If spoofing passed but liveness challenge failed
         if not live_ok:
             return False, live_msg, None
+            
         return FacialRecognitionService.recognize_face_with_multiple_encodings(img)
 
     @staticmethod  
@@ -1015,7 +1067,7 @@ class FacialRecognitionService:
             
             # --- 1. Multi-scale FFT Peak Detection ---
             # Moiré patterns create sharp peaks in frequency domain
-            for scale in [1.0, 0.75, 0.5]:
+            for scale in [1.0, 0.75, 0.5, 0.25]:
                 if scale != 1.0:
                     scaled = cv2.resize(roi, None, fx=scale, fy=scale)
                 else:

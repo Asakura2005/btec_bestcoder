@@ -73,15 +73,14 @@ def get_admin_dashboard_stats():
     month_start, month_end = _get_month_range()
     
     # Tổng ngày công tháng này (tất cả NV)
-    month_attendance_days = db.session.query(
-        func.count(func.distinct(
-            func.concat(Attendance.employee_id, '-', func.date(Attendance.timestamp))
-        ))
+    month_attendances_query = db.session.query(
+        Attendance.employee_id, func.date(Attendance.timestamp)
     ).filter(
         Attendance.timestamp >= month_start,
         Attendance.timestamp <= month_end,
         Attendance.status == 'check-in'
-    ).scalar() or 0
+    ).all()
+    month_attendance_days = len(set(month_attendances_query))
     
     # Late count tháng này
     month_late_count = db.session.query(
