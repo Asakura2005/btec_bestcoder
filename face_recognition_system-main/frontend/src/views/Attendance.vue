@@ -3,7 +3,6 @@
     <div class="background-decoration-top"></div>
     <div class="background-decoration-bottom"></div>
 
-        <!-- Nút Admin Login -->
     <div class="admin-login-button">
       <v-btn
         class="logout-btn"
@@ -12,7 +11,7 @@
         prepend-icon="mdi-shield-lock-outline"
         @click="$router.push('/login')"
       >
-        User Login
+        Portal Login
       </v-btn>
     </div>
 
@@ -37,7 +36,8 @@
           <div class="video-container">
             <div class="video-frame">
               <video ref="videoRef" autoplay playsinline muted></video>
-              <canvas ref="canvasRef"></canvas>
+              <canvas ref="canvasRef" style="display: none;"></canvas>
+              <canvas ref="analysisCanvasRef" class="analysis-canvas"></canvas>
               
               <div class="face-overlay">
                 <div class="top-left"></div>
@@ -93,6 +93,18 @@
                 class="control-button"
               >
                 Turn on Webcam
+              </v-btn>
+
+              <!-- AI Analysis Mode Toggle -->
+              <v-btn
+                v-if="isCameraActive"
+                @click="toggleAnalysisMode"
+                :color="isAnalysisActive ? 'deep-purple-accent-4' : 'blue-grey-darken-3'"
+                size="large"
+                :prepend-icon="isAnalysisActive ? 'mdi-matrix' : 'mdi-microscope'"
+                class="control-button"
+              >
+                {{ isAnalysisActive ? 'Disable AI Analysis' : 'Enable AI Analysis' }}
               </v-btn>
             </div>
           </div>
@@ -303,6 +315,9 @@ export default {
       statusMessage: "Scanning for your face, please look directly at the camera.",
       faceQuality: null,
       qualityCheckInterval: null,
+      isAnalysisActive: false,
+      analysisInterval: null,
+      modelsLoaded: false
     };
   },
   watch: {
@@ -314,11 +329,13 @@ export default {
       }
     }
   },
-  mounted() {
+  async mounted() {
     this.startCamera();
+    this.loadAnalysisModels();
   },
   beforeUnmount() {
     this.stopContinuousRecognition();
+    this.stopAnalysis();
   },
   methods: {
     formatTimestamp(timestamp) {
@@ -423,6 +440,11 @@ formatHistoryDate(dateString) {
         this.isCameraActive = true;
         this.statusMessage = "Scanning for your face, please look directly at the camera.";
         this.startContinuousRecognition();
+        
+        // Tự động khôi phục chế độ phân tích nếu đang bật
+        if (this.isAnalysisActive) {
+          this.startAnalysis();
+        }
       } catch (err) {
         this.error = 'Cannot access camera. Please check permissions.';
         this.isCameraActive = false;
@@ -750,6 +772,68 @@ formatHistoryDate(dateString) {
         'surprise': '😲'
       };
       return emojiMap[emotion] || '😐';
+    },
+
+    // --- Chế độ Phân tích AI (Diagnostic Mode) ---
+    async loadAnalysisModels() {
+      if (this.modelsLoaded) return;
+      try {
+        console.log('Loading AI models for analysis...');
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL)
+        ]);
+        this.modelsLoaded = true;
+        console.log('AI Analysis Models Loaded.');
+      } catch (e) {
+        console.error('Failed to load analysis models:', e);
+      }
+    },
+
+    toggleAnalysisMode() {
+      this.isAnalysisActive = !this.isAnalysisActive;
+      if (this.isAnalysisActive) {
+        this.startAnalysis();
+      } else {
+        this.stopAnalysis();
+      }
+    },
+
+    async startAnalysis() {
+      if (!this.modelsLoaded) await this.loadAnalysisModels();
+      if (this.analysisInterval) clearInterval(this.analysisInterval);
+      
+      this.analysisInterval = setInterval(async () => {
+        if (!this.$refs.videoRef || !this.$refs.analysisCanvasRef || !this.isAnalysisActive) return;
+        
+        const video = this.$refs.videoRef;
+        const canvas = this.$refs.analysisCanvasRef;
+        
+        const displaySize = { width: video.clientWidth, height: video.clientHeight };
+        faceapi.matchDimensions(canvas, displaySize);
+        
+        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks();
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+        
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Vẽ khung và landmarks (điểm mốc)
+        faceapi.draw.drawDetections(canvas, resizedDetections);
+        faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+      }, 100);
+    },
+
+    stopAnalysis() {
+      if (this.analysisInterval) {
+        clearInterval(this.analysisInterval);
+        this.analysisInterval = null;
+      }
+      if (this.$refs.analysisCanvasRef) {
+        const ctx = this.$refs.analysisCanvasRef.getContext('2d');
+        ctx.clearRect(0, 0, 1000, 1000);
+      }
     }
   }
 };

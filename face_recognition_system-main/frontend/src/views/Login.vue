@@ -285,10 +285,10 @@ import { useRouter } from 'vue-router'
 const authStore = useAuthStore()
 const router = useRouter()
 
-// Tab hiện tại
+// Current active tab
 const activeTab = ref('admin')
 
-// Form data (chia tách cho Admin và Employee)
+// Form data (separated for Admin and Employee)
 const form = reactive({
   adminUsername: '',
   adminPassword: '',
@@ -348,16 +348,16 @@ const isForgotPasswordFormValid = computed(() => {
   return /.+@.+\..+/.test(forgotPasswordEmail.value) && forgotPasswordEmail.value.trim() !== ''
 })
 
-// Dialog "Quên mật khẩu"
+// "Forgot Password" dialog
 const forgotPasswordDialog = ref(false)
 const forgotPasswordEmail = ref('')
 const forgotPasswordUserType = ref('')
 const forgotPasswordForm = ref(null)
 
-// Trạng thái của dialog quên mật khẩu
+// Status of forgot password dialog
 const hasSentForgotPassword = ref(false)
 
-// Thông báo trong dialog
+// Message in dialog
 const forgotPasswordMessage = ref('')
 const forgotPasswordMessageType = ref('info')
 
@@ -481,7 +481,7 @@ const handleLogin = async (userType) => {
     }
     
   } catch (error) {
-    const msg = error.response?.data?.error ?? error.message ?? 'Đã xảy ra lỗi trong quá trình đăng nhập.'
+    const msg = error.response?.data?.error ?? error.message ?? 'An error occurred during login process.'
     connectionError.value = msg
     
     if (userType === 'admin') {
@@ -501,7 +501,7 @@ const goToAttendancePage = () => {
   router.push('/attendance')
 }
 
-// Mở dialog quên mật khẩu
+// Open forgot password dialog
 const showForgotPasswordDialog = (userType) => {
   forgotPasswordUserType.value = userType
   forgotPasswordEmail.value = ''
@@ -510,7 +510,7 @@ const showForgotPasswordDialog = (userType) => {
   forgotPasswordDialog.value = true
 }
 
-// Đóng dialog quên mật khẩu
+// Close forgot password dialog
 const closeForgotPasswordDialog = () => {
   forgotPasswordDialog.value = false
   forgotPasswordEmail.value = ''
@@ -518,7 +518,7 @@ const closeForgotPasswordDialog = () => {
   hasSentForgotPassword.value = false
 }
 
-// Xử lý khi click "Send Reset Link"
+// Handle "Send Reset Link" click
 const handleForgotPassword = async () => {
   if (!isForgotPasswordFormValid.value) {
     return

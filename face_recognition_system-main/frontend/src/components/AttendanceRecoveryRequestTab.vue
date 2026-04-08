@@ -276,7 +276,7 @@ defineExpose({
   pendingCount
 });
 
-// Watch pendingCount và emit event khi thay đổi
+// Watch pendingCount and emit event when it changes
 watch(pendingCount, (newCount) => {
   emit('pending-count-updated', newCount);
 }, { immediate: true });

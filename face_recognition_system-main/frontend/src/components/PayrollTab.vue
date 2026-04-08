@@ -187,7 +187,7 @@ export default {
 
     const months = Array.from({ length: 12 }, (_, i) => ({
       value: i + 1,
-      label: `Tháng ${i + 1}`
+      label: `Month ${i + 1}`
     }))
     const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - 2 + i)
 

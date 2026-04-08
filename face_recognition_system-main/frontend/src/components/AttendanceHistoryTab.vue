@@ -315,7 +315,7 @@
                             <span v-else class="text-disabled">-</span>
                           </template>
                           
-                          <!-- THÊM template slot checkout_time (hiện tại không có): -->
+                          <!-- ADDED checkout_time template slot (previously missing): -->
                           <template v-slot:item.checkout_time="{ item }">
                             <span v-if="item.checkout_time && item.attendance_type !== 'recovered'" class="time-cell">{{ item.checkout_time }}</span>
                             <span v-else-if="item.attendance_type === 'recovered'" class="text-teal">
@@ -545,7 +545,7 @@ const fetchReport = async () => {
       const response = await getEmployeeReport(employeeId.value.trim(), startDate, endDate);
       reportData.value = response;
       
-      // THÊM DÒNG NÀY - lưu company settings
+      // ADDED THIS - save company settings
       if (response.report?.company_settings) {
         companySettings.value = response.report.company_settings;
       }
@@ -553,7 +553,7 @@ const fetchReport = async () => {
       const response = await getDepartmentReport(department.value, startDate, endDate);
       reportData.value = response;
       
-      // THÊM DÒNG NÀY - với department report, lấy settings từ employee đầu tiên
+      // ADDED THIS - for department report, get settings from first employee
       if (response.report?.employee_reports?.[0]?.company_settings) {
         companySettings.value = response.report.employee_reports[0].company_settings;
       }

@@ -152,14 +152,23 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
 }
 
-.video-frame video {
+.video-frame video,
+.analysis-canvas {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
 }
 
-.video-frame canvas {
+.analysis-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+canvas[ref="canvasRef"] {
   display: none;
 }
 
@@ -214,7 +223,9 @@
 
 .camera-controls {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
 .control-button {

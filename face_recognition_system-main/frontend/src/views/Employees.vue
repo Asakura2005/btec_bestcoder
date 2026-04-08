@@ -760,7 +760,7 @@ const fetchAttendanceHistory = async () => {
     // Store the full report
     attendanceReport.value = response;
     
-    // THÊM DÒNG NÀY - lưu company settings từ backend
+    // ADDED THIS - save company settings from backend
     if (response.report?.company_settings) {
       companySettings.value = response.report.company_settings;
     }
@@ -768,7 +768,7 @@ const fetchAttendanceHistory = async () => {
     // Extract daily records và thêm notes cho từng ngày
     const dailyRecords = response.report?.daily_records || [];
     
-    // Thêm logic tạo notes cho mỗi ngày
+    // Add logic to generate notes for each day
     dailyAttendanceRecords.value = dailyRecords.map(record => ({
       ...record,
       notes: generateDayNotes(record)
